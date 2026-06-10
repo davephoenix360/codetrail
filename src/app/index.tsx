@@ -1,61 +1,62 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
+/**
+ * CodeTrail home screen.
+ *
+ * Shows a sign-in button when signed out, the user's name/email when signed in.
+ * Built on the hype-man voice: encouraging, never guilt-trippy.
+ */
+import { StyleSheet, View, ActivityIndicator, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
+import { useAuth } from '@/hooks/use-auth';
+import { SignInWithGitHub } from '@/components/sign-in-with-github';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
 
 export default function HomeScreen() {
+  const { user, loading, isSignedIn, signOut } = useAuth();
+
+  if (loading) {
+    return (
+      <ThemedView style={styles.container}>
+        <ActivityIndicator size="large" />
+      </ThemedView>
+    );
+  }
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
-
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
-
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
-
-        {Platform.OS === 'web' && <WebBadge />}
+        {isSignedIn ? (
+          <View style={styles.content}>
+            <ThemedText type="title" style={styles.heading}>
+              You shipped.
+            </ThemedText>
+            <ThemedText style={styles.muted}>
+              Hi, {user?.displayName || user?.email}. Time to pick a repo to track.
+            </ThemedText>
+            <Pressable
+              onPress={signOut}
+              style={styles.signOutButton}
+              accessibilityRole="button"
+              accessibilityLabel="Sign out"
+            >
+              <ThemedText style={styles.signOutText}>Sign out</ThemedText>
+            </Pressable>
+          </View>
+        ) : (
+          <View style={styles.content}>
+            <ThemedText type="title" style={styles.heading}>
+              CodeTrail
+            </ThemedText>
+            <ThemedText style={styles.tagline}>
+              The hype-man for your coding projects.
+            </ThemedText>
+            <ThemedText style={styles.muted}>
+              Sign in with GitHub to start tracking your streak. No judgment, just momentum.
+            </ThemedText>
+            <SignInWithGitHub />
+          </View>
+        )}
       </SafeAreaView>
     </ThemedView>
   );
@@ -69,30 +70,35 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
-  },
-  heroSection: {
     alignItems: 'center',
     justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
+    padding: 24,
   },
-  title: {
+  content: {
+    alignItems: 'center',
+    gap: 12,
+    maxWidth: 360,
+  },
+  heading: {
     textAlign: 'center',
   },
-  code: {
-    textTransform: 'uppercase',
+  tagline: {
+    fontSize: 18,
+    textAlign: 'center',
+    fontWeight: '500',
   },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
+  muted: {
+    textAlign: 'center',
+    opacity: 0.7,
+    marginTop: 4,
+  },
+  signOutButton: {
+    marginTop: 32,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  signOutText: {
+    opacity: 0.5,
+    fontSize: 14,
   },
 });
