@@ -9,12 +9,13 @@ web-build/
 expo-env.d.ts
 
 # Native
+.kotlin/
+*.orig.*
 *.jks
 *.p8
 *.p12
 *.key
 *.mobileprovision
-*.orig.*
 *.apk
 *.aab
 *.ipa
@@ -22,9 +23,8 @@ expo-env.d.ts
 
 # Metro
 .metro-health-check*
-metro-*.log
 
-# Debug / logs
+# Debug
 npm-debug.*
 yarn-debug.*
 yarn-error.*
@@ -37,6 +37,7 @@ yarn-error.*
 .DS_Store
 .AppleDouble
 .LSOverride
+*.pem
 
 # Windows
 Thumbs.db
@@ -56,11 +57,18 @@ $RECYCLE.BIN/
 coverage/
 *.lcov
 
-# Build artifacts
+# TypeScript build artifacts
 *.tsbuildinfo
+
+# Generated native folders (created by `npx expo prebuild`)
+/ios
+/android
 
 # Firebase
 .firebase/
 firebase-debug.log
 firestore-debug.log
 ui-debug.log
+
+# Expo example (residual from template, regenerate with `npm run reset-project`)
+example
