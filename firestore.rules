@@ -1,0 +1,37 @@
+rules_version = '2';
+
+// CodeTrail — Firestore security rules
+//
+// Data model:
+//   users/{uid}                              — user profile (displayName, avatar, etc.)
+//   users/{uid}/trackedRepos/{repoFullName}  — repos the user is tracking for streak
+//
+// All access is denied by default. A user can only read/write their own
+// documents. There is no public read, no cross-user access, no admin SDK
+// in the client.
+//
+// To deploy:
+//   firebase deploy --only firestore:rules    (after `firebase login`)
+// or via the Firebase console → Firestore → Rules.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // User profile: only the owning user can read or write.
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+
+      // Tracked repos: a sub-collection of the user. Document IDs are
+      // GitHub repo full names like "davephoenix360/codetrail" — we
+      // don't constrain the {repoId} shape because slashes are valid
+      // Firestore doc IDs and the client writes these.
+      match /trackedRepos/{repoId} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+    }
+
+    // Everything else: deny by default. No other collections exist yet.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
