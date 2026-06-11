@@ -72,3 +72,13 @@ ui-debug.log
 
 # Expo example (residual from template, regenerate with `npm run reset-project`)
 example
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+# Stale wrangler config that may be auto-generated when wrangler is
+# accidentally run from the project root (it treats the Expo web build
+# as a static-assets worker and overwrites our module worker). The
+# real config lives in cloudflare-worker/wrangler.toml and IS tracked.
+/wrangler.jsonc

@@ -1,4 +1,4 @@
-name = "codetrail-exchange"
+name = "codetrail-oauth"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
 
