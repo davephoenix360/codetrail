@@ -2,7 +2,7 @@
 
 > A mobile app that helps coding learners stay accountable to their side projects — with a friendly hype-man approach, not the guilt-trippy streak-shame of Duolingo.
 
-**Status:** Auth complete (2026-06-10). GitHub sign-in working end-to-end on Android (Expo Go) → Firebase Auth → home screen. Next: repository picker + dashboard.
+**Status:** Repo picker complete (2026-06-11). GitHub sign-in working → home screen auto-redirects to `/repos` → user can browse their public repos and toggle tracking. Tracked repos persist in Firestore. Next: personal dashboard (streak + weekly commits).
 
 ## The pitch
 
@@ -57,9 +57,9 @@ cp .env.example .env
 
 3. Copy the **client ID** into `.env` as `EXPO_PUBLIC_GITHUB_OAUTH_CLIENT_ID`. Keep the client secret for step 4.
 
-### 4. Cloudflare Worker (the GitHub → Firebase token exchanger)
+### 4. Cloudflare Worker (GitHub → Firebase token exchanger + GitHub API proxy)
 
-The worker holds the GitHub client secret and exchanges the OAuth `code` for an access token. It's deployed with the free Workers plan.
+The worker holds the GitHub client secret, exchanges the OAuth `code` for an access token, and proxies GitHub API calls (so the access token never leaves our infra).
 
 ```bash
 cd cloudflare-worker
@@ -67,21 +67,35 @@ npm install
 npx wrangler login
 npx wrangler secret put GITHUB_OAUTH_CLIENT_ID      # paste the client_id
 npx wrangler secret put GITHUB_OAUTH_CLIENT_SECRET  # paste the client_secret
-npx wrangler secret put FIREBASE_API_KEY            # from .env
 npx wrangler deploy
 # Copy the printed *.workers.dev URL into .env as EXPO_PUBLIC_CODETRAIL_EXCHANGE_URL
 ```
 
 The worker's code (`cloudflare-worker/src/`) is the only place the client_secret ever lives. The app never sees it.
 
-### 5. Run it
+The worker exposes three endpoints:
+- `POST /` — exchange an OAuth code for an access token
+- `POST /user` — get the authenticated GitHub user's profile
+- `POST /user/repos` — list the authenticated user's public repos (sorted by most recently updated)
+
+All three are called by the app via `src/lib/github-api.ts` (which adds the access token from `useAuth`).
+
+### 5. Firestore (one-time, per Firebase project)
+
+1. In the [Firebase Console](https://console.firebase.google.com), go to Firestore Database → Rules.
+2. Copy the contents of `firestore.rules` from this repo and paste it in.
+3. Publish.
+
+The rules deny everything by default, then allow each user to read/write their own `users/{uid}` doc and `users/{uid}/trackedRepos/{repoId}` subcollection. No public reads, no cross-user access, no admin SDK in the client.
+
+### 6. Run it
 
 ```bash
 npx expo start
 # Scan the QR with Expo Go on your phone
 ```
 
-Sign in with GitHub — you should land on the "You shipped." home screen.
+Sign in with GitHub — you should land on `/repos`. If you have public repos on GitHub, tap "Browse your projects" to see them and toggle tracking on the ones you want. Sign out and back in to confirm your tracked repos persist.
 
 ## Development
 
@@ -103,18 +117,21 @@ codetrail/
 ├── tsconfig.json            # extends expo/tsconfig.base, @/* → src/* paths
 ├── .env.example             # template for the per-developer .env
 ├── assets/                  # icons (iOS, Android, web, splash)
-├── cloudflare-worker/       # GitHub → access-token exchanger (free tier)
+├── cloudflare-worker/       # GitHub → access-token exchanger + GitHub API proxy
 │   ├── src/index.ts
 │   ├── wrangler.toml
 │   └── deploy.sh
+├── firestore.rules          # Firestore security rules (deploy to Firebase Console)
+├── firestore.indexes.json
 ├── src/
 │   ├── app/                 # Expo Router (file-based routing)
 │   │   ├── _layout.tsx      # root layout
-│   │   ├── index.tsx        # home screen (sign-in / signed-in views)
+│   │   ├── index.tsx        # landing screen (sign-in OR redirect to /repos)
+│   │   ├── repos.tsx        # main authenticated screen
 │   │   └── auth/callback.tsx  # OAuth deep-link handler
-│   ├── components/          # shared UI (SignInWithGitHub, ThemedText, ThemedView)
-│   ├── hooks/               # useAuth (Firebase auth state)
-│   ├── lib/                 # firebase.ts, auth-callback.ts
+│   ├── components/          # shared UI (SignInWithGitHub, RepoListItem, RepoPicker, ThemedText, ThemedView)
+│   ├── hooks/               # useAuth (Firebase auth state + GitHub token)
+│   ├── lib/                 # firebase.ts, auth-callback.ts, github-api.ts, github-token-store.ts, firebase-repos.ts
 │   ├── constants/           # theme tokens
 │   └── global.css           # web-only font CSS variables
 ├── BRIEF.md                 # full project brief
