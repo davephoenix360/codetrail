@@ -194,16 +194,28 @@ export default function ReposScreen() {
               Hi, {user?.displayName || user?.email}.
             </ThemedText>
           </View>
-          <Pressable
-            onPress={signOut}
-            accessibilityRole="button"
-            accessibilityLabel="Sign out"
-            style={styles.signOut}
-          >
-            <ThemedText type="small" style={styles.muted}>
-              Sign out
-            </ThemedText>
-          </Pressable>
+          <View style={styles.headerActions}>
+            <Pressable
+              onPress={() => router.push('/settings/accounts')}
+              accessibilityRole="button"
+              accessibilityLabel="Settings"
+              style={styles.headerButton}
+            >
+              <ThemedText type="small" style={styles.muted}>
+                Settings
+              </ThemedText>
+            </Pressable>
+            <Pressable
+              onPress={signOut}
+              accessibilityRole="button"
+              accessibilityLabel="Sign out"
+              style={styles.headerButton}
+            >
+              <ThemedText type="small" style={styles.muted}>
+                Sign out
+              </ThemedText>
+            </Pressable>
+          </View>
         </View>
 
         {trackedState === 'loading' ? (
@@ -301,13 +313,18 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: Spacing.one,
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  headerButton: {
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.two,
+  },
   heading: {
     fontSize: 32,
     lineHeight: 36,
-  },
-  signOut: {
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.three,
   },
   muted: {
     opacity: 0.7,
