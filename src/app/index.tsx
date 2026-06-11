@@ -1,21 +1,43 @@
 /**
- * CodeTrail home screen.
+ * CodeTrail home/landing screen.
  *
- * Shows a sign-in button when signed out, the user's name/email when signed in.
- * Built on the hype-man voice: encouraging, never guilt-trippy.
+ * - Signed out: shows the sign-in view.
+ * - Signed in: redirects to /repos (the main authenticated screen).
+ *
+ * The redirect happens in a useEffect to avoid React's "cannot update
+ * another component during render" warning.
  */
-import { StyleSheet, View, ActivityIndicator, Pressable } from 'react-native';
+import { useEffect } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 
 import { useAuth } from '@/hooks/use-auth';
 import { SignInWithGitHub } from '@/components/sign-in-with-github';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { Spacing } from '@/constants/theme';
 
 export default function HomeScreen() {
-  const { user, loading, isSignedIn, signOut } = useAuth();
+  const { user, loading, isSignedIn } = useAuth();
+
+  // If signed in, send them to /repos.
+  useEffect(() => {
+    if (!loading && isSignedIn) {
+      router.replace('/repos');
+    }
+  }, [loading, isSignedIn]);
 
   if (loading) {
+    return (
+      <ThemedView style={styles.container}>
+        <ActivityIndicator size="large" />
+      </ThemedView>
+    );
+  }
+
+  if (isSignedIn) {
+    // Redirect is in flight; show a brief placeholder.
     return (
       <ThemedView style={styles.container}>
         <ActivityIndicator size="large" />
@@ -26,37 +48,28 @@ export default function HomeScreen() {
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
-        {isSignedIn ? (
-          <View style={styles.content}>
-            <ThemedText type="title" style={styles.heading}>
-              You shipped.
-            </ThemedText>
-            <ThemedText style={styles.muted}>
-              Hi, {user?.displayName || user?.email}. Time to pick a repo to track.
-            </ThemedText>
+        <View style={styles.content}>
+          <ThemedText type="title" style={styles.heading}>
+            CodeTrail
+          </ThemedText>
+          <ThemedText style={styles.tagline}>
+            The hype-man for your coding projects.
+          </ThemedText>
+          <ThemedText style={styles.muted}>
+            Sign in with GitHub to start tracking your streak. No judgment, just momentum.
+          </ThemedText>
+          <SignInWithGitHub />
+          {user ? (
+            // Theoretically unreachable — the redirect above catches signed-in users.
+            // Kept as a safety net for the in-between moment.
             <Pressable
-              onPress={signOut}
-              style={styles.signOutButton}
-              accessibilityRole="button"
-              accessibilityLabel="Sign out"
+              onPress={() => router.replace('/repos')}
+              style={styles.fallback}
             >
-              <ThemedText style={styles.signOutText}>Sign out</ThemedText>
+              <ThemedText type="link">Go to your projects →</ThemedText>
             </Pressable>
-          </View>
-        ) : (
-          <View style={styles.content}>
-            <ThemedText type="title" style={styles.heading}>
-              CodeTrail
-            </ThemedText>
-            <ThemedText style={styles.tagline}>
-              The hype-man for your coding projects.
-            </ThemedText>
-            <ThemedText style={styles.muted}>
-              Sign in with GitHub to start tracking your streak. No judgment, just momentum.
-            </ThemedText>
-            <SignInWithGitHub />
-          </View>
-        )}
+          ) : null}
+        </View>
       </SafeAreaView>
     </ThemedView>
   );
@@ -72,11 +85,11 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
+    padding: Spacing.five,
   },
   content: {
     alignItems: 'center',
-    gap: 12,
+    gap: Spacing.three,
     maxWidth: 360,
   },
   heading: {
@@ -90,15 +103,9 @@ const styles = StyleSheet.create({
   muted: {
     textAlign: 'center',
     opacity: 0.7,
-    marginTop: 4,
+    marginTop: Spacing.one,
   },
-  signOutButton: {
-    marginTop: 32,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  signOutText: {
-    opacity: 0.5,
-    fontSize: 14,
+  fallback: {
+    marginTop: Spacing.four,
   },
 });
