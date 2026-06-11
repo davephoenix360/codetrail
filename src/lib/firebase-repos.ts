@@ -30,13 +30,16 @@ import type { GitHubRepo } from './github-api';
  * - `repoFullName` is the doc ID and the canonical identifier
  * - The rest is a snapshot of GitHub data at the time the user added it
  *   (we don't auto-refresh; v2.0 has a background sync)
+ * - `description` and `language` may be `undefined` when read back from
+ *   Firestore (we strip null values on write; the absence of a field is
+ *   the canonical "no value" state)
  */
 export interface TrackedRepo {
   repoId: number;
   repoFullName: string;
   name: string;
-  description: string | null;
-  language: string | null;
+  description?: string | null;
+  language?: string | null;
   stars: number;
   updatedAt: string;
   trackedAt: number; // ms epoch; set by the server timestamp on first write
@@ -55,6 +58,25 @@ function trackedReposCol(uid: string) {
 /** Build the Firestore document reference for a single tracked repo. */
 function trackedRepoDoc(uid: string, repoFullName: string) {
   return doc(db, 'users', uid, 'trackedRepos', repoFullName);
+}
+
+/**
+ * Strip null and undefined values from a payload.
+ *
+ * Firestore rejects writes that contain a field with value `null` (e.g.,
+ * "Unsupported field value: null"). GitHub's API returns `null` for repos
+ * without a description or a primary language — so we have to scrub these
+ * before calling setDoc. Missing fields are fine; the absence of a field
+ * is what Firestore expects for "no value."
+ */
+function stripNulls<T extends Record<string, unknown>>(
+  obj: T,
+): { [K in keyof T]: Exclude<T[K], null | undefined> } {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== null && v !== undefined) out[k] = v;
+  }
+  return out as { [K in keyof T]: Exclude<T[K], null | undefined> };
 }
 
 // ---------------------------------------------------------------------------
@@ -83,7 +105,7 @@ export function isTracked(
 export async function trackRepo(uid: string, repo: GitHubRepo): Promise<void> {
   await setDoc(
     trackedRepoDoc(uid, repo.fullName),
-    {
+    stripNulls({
       repoId: repo.id,
       repoFullName: repo.fullName,
       name: repo.name,
@@ -93,7 +115,7 @@ export async function trackRepo(uid: string, repo: GitHubRepo): Promise<void> {
       updatedAt: repo.updatedAt,
       trackedAt: serverTimestamp(),
       lastFetchedAt: Date.now(),
-    },
+    }),
     { merge: true },
   );
 }
