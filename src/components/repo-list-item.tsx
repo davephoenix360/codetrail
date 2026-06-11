@@ -2,13 +2,14 @@
  * RepoListItem — a single row in a list of GitHub repos.
  *
  * Shows: language color dot, repo name, description (1 line, ellipsized),
- * language name, star count, and a Switch for tracking.
+ * language name, star count, and a Checkbox for tracking.
  *
- * Hype-man microcopy on the Switch: instead of generic "On/Off", we show
+ * Hype-man microcopy: instead of generic "On/Off", we show
  * "Tracking" / "Tap to track" so the action language stays encouraging.
  */
-import { StyleSheet, Switch, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import { Checkbox } from './checkbox';
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
 import { Spacing } from '@/constants/theme';
@@ -90,7 +91,7 @@ export function RepoListItem({
         </ThemedText>
       </View>
       <View style={styles.right}>
-        <Switch
+        <Checkbox
           value={tracked}
           onValueChange={onToggle}
           accessibilityLabel={`${tracked ? 'Untrack' : 'Track'} ${fullName}`}
