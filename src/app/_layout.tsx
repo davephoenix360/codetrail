@@ -5,22 +5,20 @@
  *   handoff from the in-app browser back to the app.
  * - Calls `getRedirectResult(auth)` on mount to capture the result of a
  *   signInWithRedirect that completed while the app was backgrounded.
+ *
+ * Uses Expo Router's <Stack> instead of native tabs. CodeTrail is a single-screen
+ * app (just the sign-in / "you shipped" greeting); tabs aren't needed.
  */
 import { useEffect } from 'react';
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
+import { Stack } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { useColorScheme } from 'react-native';
 import { getRedirectResult } from 'firebase/auth';
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
 import { auth } from '@/lib/firebase';
 
 WebBrowser.maybeCompleteAuthSession();
 
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
+export default function RootLayout() {
   useEffect(() => {
     // When the app reopens after a Firebase auth redirect, this resolves with
     // the auth credential. We don't need to do anything with it — onAuthStateChanged
@@ -30,10 +28,5 @@ export default function TabLayout() {
     });
   }, []);
 
-  return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      <AppTabs />
-    </ThemeProvider>
-  );
+  return <Stack screenOptions={{ headerShown: false }} />;
 }

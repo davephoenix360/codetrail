@@ -1,16 +1,21 @@
-import { View, type ViewProps } from 'react-native';
+/**
+ * ThemedView — auto-themed View that picks background color from the system
+ * color scheme. Supports optional `lightColor` / `darkColor` overrides.
+ */
+import { useColorScheme, View, type ViewProps } from 'react-native';
 
-import { ThemeColor } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { Colors } from '@/constants/theme';
 
 export type ThemedViewProps = ViewProps & {
   lightColor?: string;
   darkColor?: string;
-  type?: ThemeColor;
 };
 
-export function ThemedView({ style, lightColor, darkColor, type, ...otherProps }: ThemedViewProps) {
-  const theme = useTheme();
+export function ThemedView({ style, lightColor, darkColor, ...otherProps }: ThemedViewProps) {
+  const scheme = useColorScheme();
+  const isDark = scheme === 'dark';
+  const colors = isDark ? Colors.dark : Colors.light;
+  const backgroundColor = (isDark ? darkColor : lightColor) ?? colors.background;
 
-  return <View style={[{ backgroundColor: theme[type ?? 'background'] }, style]} {...otherProps} />;
+  return <View style={[{ backgroundColor }, style]} {...otherProps} />;
 }
