@@ -225,19 +225,22 @@ export function SignInWithGitHub() {
 
     // Set up the handler that the Linking listener will call if the
     // WebBrowser promise never resolves (e.g., Chrome Custom Tab stays
-    // stuck on GitHub's "You are being redirected" page).
+    // stuck on the redirect page).
     authHandlerRef.current = {
       state,
       processUrl: async (url: string) => {
+        if (__DEV__) console.log('[codetrail] Linking event fired, processing URL:', url);
         await processAuthCallback(url, state, setLoading);
       },
     };
+    if (__DEV__) console.log('[codetrail] starting WebBrowser.openAuthSessionAsync');
 
     let result: Awaited<ReturnType<typeof WebBrowser.openAuthSessionAsync>>;
     try {
       // 2. Open the system browser. This blocks until the user authorizes
       // and GitHub redirects to REDIRECT_URI.
       result = await WebBrowser.openAuthSessionAsync(authUrl.toString(), REDIRECT_URI);
+      if (__DEV__) console.log('[codetrail] WebBrowser.openAuthSessionAsync resolved:', result.type, result.url ?? '(no url)');
     } catch (e) {
       console.warn('[codetrail] openAuthSessionAsync threw:', e);
       authHandlerRef.current = null;

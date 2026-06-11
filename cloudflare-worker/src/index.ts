@@ -129,15 +129,35 @@ const REDIRECT_HTML = `<!DOCTYPE html>
         return;
       }
 
+      // Two URLs:
+      //   1. deepLink  = 'exp+codetrail://...'         — the standard deep link
+      //                  (works on iOS, and on Android when the browser
+      //                  auto-dispatches to the installed app)
+      //   2. intentUrl = 'intent://...#Intent;...'     — Android-specific.
+      //                  Chrome Custom Tabs sometimes silently drop
+      //                  navigations to unknown custom schemes. The
+      //                  intent:// URL explicitly invokes the target app
+      //                  (Expo Go, package host.exp.exponent) so the OS
+      //                  dispatches the deep link regardless of the
+      //                  browser's policy.
+      // We try intent:// first on Android, with the standard custom
+      // scheme as a fallback. iOS will simply ignore the intent:// URL.
       var deepLink = 'exp+codetrail://auth/callback?code=' + encodeURIComponent(code) +
         (state ? '&state=' + encodeURIComponent(state) : '');
+      var intentUrl = 'intent://auth/callback?code=' + encodeURIComponent(code) +
+        (state ? '&state=' + encodeURIComponent(state) : '') +
+        '#Intent;scheme=exp+codetrail;package=host.exp.exponent;S.browser_fallback_url=' +
+        encodeURIComponent(deepLink) + ';end';
 
-      // Fallback manual link
+      // Detect Android (the user-agent of Chrome Custom Tabs contains "Android")
+      var isAndroid = /Android/i.test(navigator.userAgent);
+
+      // Show fallback manual link
       message.classList.remove('hidden');
       message.innerHTML = 'If nothing happens, <a href="' + deepLink + '">tap here to open the app</a>.';
 
-      // Auto-redirect via JS
-      window.location.href = deepLink;
+      // Auto-redirect: prefer intent:// on Android, plain custom scheme elsewhere
+      window.location.href = isAndroid ? intentUrl : deepLink;
     })();
   </script>
 </body>
