@@ -1,10 +1,10 @@
 # Project: CodeTrail *(codename — pick a real name later)*
 
 > **One-liner:** A mobile app that turns your GitHub repos into a Duolingo-style learning streak. Pick projects to track, ship daily progress, see your friends' projects, get help when stuck.
->
-> **Status:** Idea-stage, no repo yet, no research done before today. This doc is the first write-up.
->
-> **Last touched:** 2026-06-10
+
+> **Status:** Phase 1 (auth) + Phase 2 (repo picker) complete as of 2026-06-11. Next: Phase 2.5 (multi-account foundation) → Phase 2.6 (personal dashboard with streak counter).
+
+> **Last touched:** 2026-06-11
 
 ## The pitch
 
@@ -214,3 +214,9 @@ For self-taught engineers, bootcamp students, and CS undergrads working on side 
 | 2026-06-10 | Multi-account: one primary, N linked | Diepreye | Real user case (personal + school + work). Aggregated stats. |
 | 2026-06-10 | Voice & tone: hype-man, supportive | Diepreye | Key differentiator from guilt-trip streak apps. Codified in Voice & Tone section. |
 | 2026-06-10 | Default leanings: free forever, both platforms, public help requests | Hermes | Sensible defaults; user can override. |
+| 2026-06-11 | Custom OAuth flow (not Firebase's `signInWithRedirect`) | Hermes | `signInWithRedirect` in React Native + Expo Go hits a Metro exports-resolution trap (`@firebase/auth/cordova` cascade) and a Cordova-plugins requirement that needs polyfilling. Custom flow via Cloudflare Worker is simpler, works on Android (Expo Go), and keeps the client_secret server-side. See skill `expo-firebase-v12-signinwithredirect-pitfalls`. |
+| 2026-06-11 | GitHub access token stored in AsyncStorage (not Firestore) for single-account | Hermes | Firebase Auth's `signInWithCredential` consumes the OAuth token and doesn't expose it back. We need it for GitHub API calls. AsyncStorage is fine for one device + one account; will move to Firestore in Phase 2.5 for multi-account + multi-device. |
+| 2026-06-11 | Firestore doc IDs use the numeric GitHub `repoId` (not `fullName`) | Diepreye (caught by) | Firestore doc IDs cannot contain `/`; GitHub `fullName` like `davephoenix360/codetrail` is rejected with `invalid-argument: 5 segments`. Use the stable numeric ID, store `fullName` as a field. See skill `firestore-doc-id-constraints`. |
+| 2026-06-11 | Firestore region = `us-central1` (Iowa), Standard edition | Diepreye | Cheapest tier, default for most Firebase services, sub-100ms latency to Edmonton. Chose over Montreal (`northamerica-northeast1`) for cost. Region is locked — any future Cloud Storage / Cloud Functions must match. |
+| 2026-06-11 | `githubAccounts/{githubId}` lookup index is **public-read** (MVP) | Diepreye + Hermes | Needed to detect "this GitHub account is already linked to someone" during the sign-in flow, which the user can't do without an auth session. Tradeoff: mild privacy risk (enumeration of GitHub ID → UID). Mitigated by GitHub's large ID space. **For v2.0, move the lookup to Cloudflare Worker with Firebase Admin SDK** (Option C in the Phase 2.5 plan) so the index is no longer public. See skill `oauth-with-linked-accounts`. |
+| 2026-06-11 | "First GitHub account to sign in = primary" rule | Diepreye | Simplest default that matches the user's mental model. Primary is mutable in Settings — the user can set any linked account as primary. |
