@@ -36,10 +36,10 @@ if ! firebase projects:list >/dev/null 2>&1; then
 fi
 ACTIVE_PROJECT=$(firebase use --json 2>/dev/null | python3 -c "import sys, json; print(json.load(sys.stdin).get('current', '?'))" 2>/dev/null || echo "?")
 echo "✓ Logged in. Active project: $ACTIVE_PROJECT"
-if [ "$ACTIVE_PROJECT" != "codetrail-32cf7" ]; then
+if [ "$ACTIVE_PROJECT" != "codetrail-968d1" ]; then
   echo ""
-  echo "⚠ Active project is '$ACTIVE_PROJECT', not 'codetrail-32cf7'."
-  echo "  Set it with: firebase use codetrail-32cf7"
+  echo "⚠ Active project is '$ACTIVE_PROJECT', not 'codetrail-968d1'."
+  echo "  Set it with: firebase use codetrail-968d1"
   echo ""
   read -p "Continue anyway? (y/N) " CONTINUE
   if [ "$CONTINUE" != "y" ] && [ "$CONTINUE" != "Y" ]; then
