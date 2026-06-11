@@ -5,19 +5,16 @@
  * `exp://<host>:<port>/--/auth/callback?code=X&state=Y` — i.e., GitHub's
  * 302 redirect after a successful OAuth authorization.
  *
- * This is the "cold start" path:
- *   - User taps "Sign in with GitHub" in the app
- *   - WebBrowser opens the GitHub authorize URL
- *   - User authorizes on GitHub
- *   - GitHub 302s to exp://...?code=X&state=Y
- *   - OS dispatches the deep link to Expo Go
- *   - Expo Go opens the app at this route
+ * This is the "cold start" path. The "in-flight" path (where the app
+ * was already in the foreground when the WebBrowser session completed)
+ * is handled by the Linking event listener in
+ * components/sign-in-with-github.tsx. Both paths call
+ * `processAuthCallback`, which dedupes via a module-level set.
  *
- * The "in-flight" path (where the app was already in the foreground when
- * the WebBrowser session completed) is handled by the Linking event
- * listener in components/sign-in-with-github.tsx. Both paths call
- * `processAuthCallback`, which dedupes via a module-level set so the URL
- * is only processed once.
+ * After processing, we navigate based on the result kind:
+ *   - newUser / reAuth: → /repos (the main app)
+ *   - linked:           → /settings/accounts (Settings screen, after a link)
+ *   - error:            → / (sign-in screen) and surface the error message
  */
 import { useEffect, useRef } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
@@ -49,25 +46,28 @@ export default function AuthCallbackRoute() {
       if (params.error_description) search.set('error_description', String(params.error_description));
       const fullUrl = `${REDIRECT_URI.split('?')[0]}?${search.toString()}`;
 
-      if (params.error) {
-        // GitHub returned an error (user denied, bad scope, etc.)
-        // The auth-callback module will console.warn this; we just navigate home.
-        await processAuthCallback(fullUrl);
-        router.replace('/');
-        return;
+      const result = await processAuthCallback(fullUrl);
+
+      if (__DEV__) {
+        console.log('[auth/callback] result:', result.kind, result);
       }
 
-      if (!params.code) {
-        // No code in URL — probably user opened the route directly.
-        // Don't call processAuthCallback (it would warn about no code).
-        router.replace('/');
-        return;
+      switch (result.kind) {
+        case 'newUser':
+        case 'reAuth':
+          router.replace('/repos');
+          return;
+        case 'linked':
+          router.replace('/settings/accounts');
+          return;
+        case 'error':
+          // Show the error in the dev console and on the home screen.
+          // The home screen's error banner will pick this up via a global
+          // event in a future iteration; for now, just navigate.
+          console.warn('[auth/callback] error:', result.message);
+          router.replace('/');
+          return;
       }
-
-      await processAuthCallback(fullUrl);
-      // Whether sign-in succeeded or failed, head home. useAuth's
-      // onAuthStateChanged will show the right UI for each case.
-      router.replace('/');
     })();
   }, [params, router]);
 
