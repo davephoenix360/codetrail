@@ -46,24 +46,14 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
-import { GithubAuthProvider, signInWithCredential } from 'firebase/auth';
 
-import { auth } from '@/lib/firebase';
+import {
+  AUTH_CONSTANTS,
+  generateAndStoreState,
+  processAuthCallback,
+} from '@/lib/auth-callback';
 
-const GITHUB_OAUTH_CLIENT_ID = process.env.EXPO_PUBLIC_GITHUB_OAUTH_CLIENT_ID ?? '';
-const EXCHANGE_URL = process.env.EXPO_PUBLIC_CODETRAIL_EXCHANGE_URL ?? '';
-
-// GitHub OAuth App callback URL — uses the `exp://` deep-link convention
-// for Expo Go. This is the dev-mode format that the WebBrowser API expects
-// to recognize as a deep link back to the app; using an HTTPS URL instead
-// (as we did before) hits a known Expo bug (#23781) where the WebBrowser
-// returns `{ type: 'dismiss' }` with no URL ~30% of the time on Android.
-//
-// On a production standalone build, this would be `codetrail://auth/callback`.
-// For dev, the host:port points at the Metro dev server, and the `/--/`
-// separator tells Expo Router this is an in-app route (not a server path).
-// The code/state query params are appended by GitHub's 302 redirect.
-const REDIRECT_URI = 'exp://100.109.146.124:8081/--/auth/callback';
+const { GITHUB_OAUTH_CLIENT_ID, EXCHANGE_URL, REDIRECT_URI } = AUTH_CONSTANTS;
 // Same scopes we asked for originally. `read:user` + `user:email` for identity,
 // `public_repo` so we can later list the user's repos to track.
 const GITHUB_SCOPES = ['read:user', 'user:email', 'public_repo'];
@@ -72,99 +62,6 @@ const GITHUB_SCOPES = ['read:user', 'user:email', 'public_repo'];
 // This is safe to call multiple times.
 WebBrowser.maybeCompleteAuthSession();
 
-function generateState(): string {
-  // 32 random bytes → base64url. Good enough for CSRF protection.
-  const bytes = new Uint8Array(32);
-  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-    crypto.getRandomValues(bytes);
-  } else {
-    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
-  }
-  let s = '';
-  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
-  return btoa(s).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-}
-
-/**
- * Module-level helper that processes an OAuth callback URL.
- * Used by both the WebBrowser result path and the Linking event path.
- * Resets `loading` on every exit so the button is never stuck disabled.
- */
-async function processAuthCallback(
-  url: string,
-  state: string,
-  setLoading: (v: boolean) => void,
-): Promise<void> {
-  // 1. Parse the callback URL
-  let callbackUrl: URL;
-  try {
-    callbackUrl = new URL(url);
-  } catch (e) {
-    console.warn('[codetrail] invalid callback URL:', url, e);
-    setLoading(false);
-    return;
-  }
-
-  const code = callbackUrl.searchParams.get('code');
-  const returnedState = callbackUrl.searchParams.get('state');
-  const error = callbackUrl.searchParams.get('error');
-  const errorDescription = callbackUrl.searchParams.get('error_description');
-
-  if (error) {
-    console.warn(`[codetrail] GitHub OAuth error: ${error} (${errorDescription})`);
-    setLoading(false);
-    return;
-  }
-  if (!code) {
-    console.warn('[codetrail] no code in callback URL:', url);
-    setLoading(false);
-    return;
-  }
-  if (returnedState !== state) {
-    console.warn('[codetrail] state mismatch — possible CSRF attack');
-    setLoading(false);
-    return;
-  }
-
-  // 2. Exchange the code for an access token via the Cloudflare Worker
-  let accessToken: string;
-  try {
-    const response = await fetch(EXCHANGE_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, redirectUri: REDIRECT_URI }),
-    });
-    if (!response.ok) {
-      const errBody = await response.text().catch(() => '<no body>');
-      console.warn(`[codetrail] exchange worker returned ${response.status}:`, errBody);
-      setLoading(false);
-      return;
-    }
-    const data = (await response.json()) as {
-      accessToken: string;
-      scope: string;
-      tokenType: string;
-    };
-    accessToken = data.accessToken;
-  } catch (e: unknown) {
-    console.warn('[codetrail] exchange worker call failed:', e);
-    setLoading(false);
-    return;
-  }
-
-  // 3. Sign in to Firebase with the GitHub access token
-  try {
-    const credential = GithubAuthProvider.credential(accessToken);
-    await signInWithCredential(auth, credential);
-    // Don't setLoading(false) here — the app is signing in and the
-    // useAuth hook's onAuthStateChanged will update the UI. If sign-in
-    // fails, the catch block will reset loading.
-  } catch (e: unknown) {
-    console.warn('[codetrail] signInWithCredential failed:', e);
-    setLoading(false);
-  }
-}
-
 export function SignInWithGitHub() {
   const [loading, setLoading] = useState(false);
   // Holds the in-flight auth handler so the global Linking listener can
@@ -172,8 +69,11 @@ export function SignInWithGitHub() {
   // (a) WebBrowser's auto-resolve, or (b) the Linking event, we clear the
   // ref so the second path becomes a no-op. This makes the deep-link
   // handoff robust against Chrome Custom Tab quirks.
+  //
+  // The CSRF state itself is no longer stored here — it's persisted in
+  // AsyncStorage by `generateAndStoreState` so the cold-start route
+  // (`app/auth/callback.tsx`) can verify it.
   const authHandlerRef = useRef<{
-    state: string;
     processUrl: (url: string) => Promise<void>;
   } | null>(null);
 
@@ -215,8 +115,9 @@ export function SignInWithGitHub() {
       return;
     }
 
-    // Generate CSRF state — will be verified against the callback's state param.
-    const state = generateState();
+    // Generate CSRF state — persisted in AsyncStorage so it survives
+    // cold-start callbacks (where the original component tree is gone).
+    const state = await generateAndStoreState();
 
     // 1. Build the GitHub OAuth URL
     const authUrl = new URL('https://github.com/login/oauth/authorize');
@@ -230,10 +131,9 @@ export function SignInWithGitHub() {
     // WebBrowser promise never resolves (e.g., Chrome Custom Tab stays
     // stuck on the redirect page).
     authHandlerRef.current = {
-      state,
       processUrl: async (url: string) => {
         if (__DEV__) console.log('[codetrail] Linking event fired, processing URL:', url);
-        await processAuthCallback(url, state, setLoading);
+        await processAuthCallback(url, { setLoading });
       },
     };
     if (__DEV__) console.log('[codetrail] starting WebBrowser.openAuthSessionAsync');
