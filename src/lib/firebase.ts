@@ -38,11 +38,11 @@ if (__DEV__) {
   console.log(`[firebase] config: ${present.length} present (${present.join(', ')})`);
 }
 
-const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0]!;
+const firebaseApp: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0]!;
 
 let _auth: Auth;
 try {
-  _auth = initializeAuth(app, {
+  _auth = initializeAuth(firebaseApp, {
     persistence: getReactNativePersistence(ReactNativeAsyncStorage),
   });
 } catch (err) {
@@ -51,7 +51,8 @@ try {
   if (__DEV__) {
     console.warn('[firebase] initializeAuth failed, falling back to getAuth:', err);
   }
-  _auth = getAuth(app);
+  _auth = getAuth(firebaseApp);
 }
 
+export const app = firebaseApp;
 export const auth = _auth;
