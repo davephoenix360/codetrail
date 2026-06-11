@@ -1,45 +1,44 @@
 /**
  * CodeTrail — Cloudflare Worker
  *
- * Exchanges a GitHub OAuth authorization code for an access token, then
- * returns the access token to the client. The client uses the access
- * token with `signInWithCredential` to sign in to Firebase Auth.
- *
- * We use Cloudflare Workers (free tier: 100k req/day, no credit card)
- * rather than Firebase Cloud Functions, which would require the Blaze
- * (pay-as-you-go) plan to make outbound HTTPS calls to GitHub.
- *
- * Flow:
- *   [RN app]  →  GitHub authorize URL (via expo-web-browser)
- *   [RN app]  ←  exp://<dev-server>:<port>/--/auth/callback?code=X&state=Y
- *   [RN app]  →  THIS worker (POST with { code, redirectUri })
- *   [worker]  →  GitHub token endpoint (with client_secret)
- *   [RN app]  ←  { accessToken, scope, tokenType }
- *   [RN app]  →  signInWithCredential(GithubAuthProvider.credential(token))
- *
  * Endpoints:
- *   POST /  with JSON body { code: string, redirectUri: string }
- *          returns { accessToken, scope, tokenType }
+ *   POST /                — Exchange a GitHub OAuth code for an access token.
+ *                          The access token is returned to the client, which
+ *                          uses it with signInWithCredential to sign in to
+ *                          Firebase Auth.
+ *   POST /user            — Get the authenticated GitHub user's profile
+ *                          (login, name, avatar, bio, public repo count,
+ *                          follower/following counts).
+ *   POST /user/repos      — List the authenticated user's public repos
+ *                          (sorted by most recently updated, max 100).
  *
  * Secrets (set via `wrangler secret put`):
  *   GITHUB_OAUTH_CLIENT_ID       — OAuth app's public client_id
  *   GITHUB_OAUTH_CLIENT_SECRET   — OAuth app's private client_secret
  *                                  (NEVER expose to the client)
+ *
+ * Why a Worker, not Cloud Functions?
+ *   Workers' free tier is 100k req/day with no credit card. Cloud Functions
+ *   requires the Blaze (pay-as-you-go) plan to make outbound HTTPS calls
+ *   (which we need, to reach api.github.com).
  */
 export interface Env {
   GITHUB_OAUTH_CLIENT_ID: string;
   GITHUB_OAUTH_CLIENT_SECRET: string;
 }
 
-// CORS headers — we allow any origin since this is a public token-exchange
-// endpoint. (The client validates the GitHub state param, and the access
-// token is only useful when paired with the corresponding GitHub code.)
+// CORS headers — we allow any origin since this is a public proxy endpoint.
+// (The GitHub access tokens the app exchanges are short-lived, scoped to
+// public_repo, and useless to an attacker who intercepts them in flight
+// because they're bound to the user's own GitHub account.)
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
   'Access-Control-Max-Age': '86400',
 } as const;
+
+const GITHUB_API_BASE = 'https://api.github.com';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -51,54 +50,101 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-function log(level: 'info' | 'warn' | 'error', message: string, extra?: Record<string, unknown>): void {
+function log(
+  level: 'info' | 'warn' | 'error',
+  message: string,
+  extra?: Record<string, unknown>,
+): void {
   const entry = { level, message, timestamp: new Date().toISOString(), ...extra };
   // Workers' console.log is captured in the Cloudflare dashboard logs.
   console.log(JSON.stringify(entry));
 }
 
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    // CORS preflight — return early with just the headers
-    if (request.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: CORS_HEADERS });
-    }
+// ---------------------------------------------------------------------------
+// GitHub API helpers
+// ---------------------------------------------------------------------------
 
-    if (request.method !== 'POST') {
-      return jsonResponse({ error: 'Method not allowed; use POST' }, 405);
-    }
+/**
+ * Make an authenticated call to the GitHub REST API on behalf of a user.
+ * Returns the parsed JSON body. Throws a descriptive Error on non-2xx.
+ *
+ * We use the user's own OAuth access token (sent from the app), not a
+ * server-side GitHub App token. This way:
+ *   - Each user is rate-limited on their own quota (5,000 req/hr)
+ *   - We see the same repos the user owns (no extra scope negotiations)
+ *   - The user can revoke the token from their GitHub settings at any time
+ */
+async function callGitHub<T = unknown>(
+  accessToken: string,
+  path: string,
+): Promise<T> {
+  const response = await fetch(`${GITHUB_API_BASE}${path}`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'CodeTrail-Worker',
+    },
+  });
 
-    // Parse JSON body
-    let body: { code?: unknown; redirectUri?: unknown };
-    try {
-      body = (await request.json()) as typeof body;
-    } catch {
-      return jsonResponse({ error: 'Invalid JSON body' }, 400);
-    }
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => '<no body>');
+    log('warn', 'GitHub API error', {
+      path,
+      status: response.status,
+      body: errBody.slice(0, 500),
+    });
 
-    const { code, redirectUri } = body;
-    if (typeof code !== 'string' || !code) {
-      return jsonResponse({ error: 'Missing or invalid "code"' }, 400);
-    }
-    if (typeof redirectUri !== 'string' || !redirectUri) {
-      return jsonResponse({ error: 'Missing or invalid "redirectUri"' }, 400);
-    }
-
-    if (!env.GITHUB_OAUTH_CLIENT_ID || !env.GITHUB_OAUTH_CLIENT_SECRET) {
-      log('error', 'GitHub OAuth secrets are not configured', {
-        hasClientId: !!env.GITHUB_OAUTH_CLIENT_ID,
-        hasClientSecret: !!env.GITHUB_OAUTH_CLIENT_SECRET,
-      });
-      return jsonResponse(
-        { error: 'Server is missing GitHub OAuth credentials. Set via `wrangler secret put`.' },
-        500,
+    if (response.status === 401) {
+      throw new Error(
+        'GitHub token expired or revoked. Please sign in again.',
       );
     }
+    if (response.status === 403) {
+      const remaining = response.headers.get('x-ratelimit-remaining');
+      const resetAt = response.headers.get('x-ratelimit-reset');
+      if (remaining === '0' && resetAt) {
+        const resetDate = new Date(parseInt(resetAt, 10) * 1000);
+        throw new Error(
+          `GitHub rate limit hit. Try again after ${resetDate.toISOString()}.`,
+        );
+      }
+      throw new Error('GitHub returned 403 (forbidden).');
+    }
+    throw new Error(`GitHub API returned HTTP ${response.status}.`);
+  }
 
-    // Exchange the code for an access token
-    let tokenResponse: Response;
-    try {
-      tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
+  return (await response.json()) as T;
+}
+
+// ---------------------------------------------------------------------------
+// Endpoint handlers
+// ---------------------------------------------------------------------------
+
+/** Exchange a GitHub OAuth authorization code for an access token. */
+async function handleCodeExchange(
+  body: { code: string; redirectUri: string },
+  env: Env,
+): Promise<Response> {
+  if (!env.GITHUB_OAUTH_CLIENT_ID || !env.GITHUB_OAUTH_CLIENT_SECRET) {
+    log('error', 'GitHub OAuth secrets are not configured', {
+      hasClientId: !!env.GITHUB_OAUTH_CLIENT_ID,
+      hasClientSecret: !!env.GITHUB_OAUTH_CLIENT_SECRET,
+    });
+    return jsonResponse(
+      {
+        error:
+          'Server is missing GitHub OAuth credentials. Set via `wrangler secret put`.',
+      },
+      500,
+    );
+  }
+
+  let tokenResponse: Response;
+  try {
+    tokenResponse = await fetch(
+      'https://github.com/login/oauth/access_token',
+      {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -107,60 +153,217 @@ export default {
         body: JSON.stringify({
           client_id: env.GITHUB_OAUTH_CLIENT_ID,
           client_secret: env.GITHUB_OAUTH_CLIENT_SECRET,
-          code,
-          redirect_uri: redirectUri,
+          code: body.code,
+          redirect_uri: body.redirectUri,
         }),
-      });
+      },
+    );
+  } catch (err) {
+    log('error', 'Failed to reach GitHub token endpoint', { error: String(err) });
+    return jsonResponse(
+      { error: 'Could not reach GitHub token endpoint' },
+      503,
+    );
+  }
+
+  if (!tokenResponse.ok) {
+    const errorText = await tokenResponse.text().catch(() => '<no body>');
+    log('error', 'GitHub token endpoint returned non-OK', {
+      status: tokenResponse.status,
+      body: errorText.slice(0, 500),
+    });
+    return jsonResponse(
+      { error: `GitHub token exchange failed (HTTP ${tokenResponse.status})` },
+      502,
+    );
+  }
+
+  const tokenData = (await tokenResponse.json()) as {
+    access_token?: string;
+    scope?: string;
+    token_type?: string;
+    error?: string;
+    error_description?: string;
+  };
+
+  if (tokenData.error) {
+    log('error', 'GitHub returned an error in the token response', {
+      error: tokenData.error,
+      description: tokenData.error_description,
+    });
+    return jsonResponse(
+      {
+        error: `GitHub error: ${tokenData.error_description ?? tokenData.error}`,
+      },
+      400,
+    );
+  }
+
+  if (!tokenData.access_token) {
+    log('error', 'No access_token in GitHub response', { response: tokenData });
+    return jsonResponse({ error: 'GitHub response missing access_token' }, 500);
+  }
+
+  log('info', 'Successfully exchanged GitHub code for access token', {
+    scope: tokenData.scope,
+    tokenType: tokenData.token_type,
+  });
+
+  return jsonResponse({
+    accessToken: tokenData.access_token,
+    scope: tokenData.scope ?? '',
+    tokenType: tokenData.token_type ?? 'bearer',
+  });
+}
+
+/** Shape we return to the client for a GitHub user profile. */
+interface GitHubUserResponse {
+  login: string;
+  name: string | null;
+  avatar_url: string;
+  bio: string | null;
+  public_repos: number;
+  followers: number;
+  following: number;
+}
+
+/** Get the authenticated GitHub user's profile. */
+async function handleGetCurrentUser(
+  body: { accessToken: string },
+): Promise<Response> {
+  const data = await callGitHub<GitHubUserResponse>(body.accessToken, '/user');
+  return jsonResponse({
+    login: data.login,
+    name: data.name,
+    avatarUrl: data.avatar_url,
+    bio: data.bio,
+    publicRepos: data.public_repos,
+    followers: data.followers,
+    following: data.following,
+  });
+}
+
+/** Shape we trim each repo down to (saves bandwidth; app doesn't need the full body). */
+interface GitHubRepoRaw {
+  id: number;
+  name: string;
+  full_name: string;
+  description: string | null;
+  language: string | null;
+  stargazers_count: number;
+  updated_at: string;
+  private: boolean;
+}
+
+/**
+ * List the authenticated user's public repos, sorted by most recently updated.
+ *
+ * We use `type=public` (not `type=owner`) because:
+ *   - Brief locks "public repos only" for MVP — public is exactly the scope we want
+ *   - `type=owner` returns an empty array for OAuth tokens issued by `gh auth login`
+ *     in some scopes (GitHub quirk; GitHub App tokens work, but OAuth user tokens
+ *     through the CLI don't always populate `type=owner`)
+ */
+async function handleListMyRepos(
+  body: { accessToken: string },
+): Promise<Response> {
+  const data = await callGitHub<GitHubRepoRaw[]>(
+    body.accessToken,
+    '/user/repos?per_page=100&sort=updated&type=public',
+  );
+  return jsonResponse(
+    data.map((r) => ({
+      id: r.id,
+      name: r.name,
+      fullName: r.full_name,
+      description: r.description,
+      language: r.language,
+      stars: r.stargazers_count,
+      updatedAt: r.updated_at,
+      isPrivate: r.private,
+    })),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Router
+// ---------------------------------------------------------------------------
+
+/** Parse a JSON body and require a string field. */
+function requireString(
+  body: Record<string, unknown>,
+  field: string,
+): { ok: true; value: string } | { ok: false; error: string } {
+  const v = body[field];
+  if (typeof v !== 'string' || !v) {
+    return { ok: false, error: `Missing or invalid "${field}"` };
+  }
+  return { ok: true, value: v };
+}
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    // CORS preflight
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: CORS_HEADERS });
+    }
+    if (request.method !== 'POST') {
+      return jsonResponse(
+        { error: 'Method not allowed; use POST' },
+        405,
+      );
+    }
+
+    // Parse JSON body once at the top
+    let body: Record<string, unknown>;
+    try {
+      body = (await request.json()) as Record<string, unknown>;
+    } catch {
+      return jsonResponse({ error: 'Invalid JSON body' }, 400);
+    }
+
+    // Route on path. Worker URL is the *.workers.dev root, so we use path
+    // segments to dispatch (Workers don't have built-in routing).
+    const url = new URL(request.url);
+    const path = url.pathname.replace(/\/+$/, '') || '/';
+
+    try {
+      // POST / — OAuth code exchange
+      if (path === '/') {
+        const code = requireString(body, 'code');
+        if (!code.ok) return jsonResponse({ error: code.error }, 400);
+        const redirectUri = requireString(body, 'redirectUri');
+        if (!redirectUri.ok) return jsonResponse({ error: redirectUri.error }, 400);
+        return await handleCodeExchange(
+          { code: code.value, redirectUri: redirectUri.value },
+          env,
+        );
+      }
+
+      // POST /user — get the GitHub user profile
+      if (path === '/user') {
+        const accessToken = requireString(body, 'accessToken');
+        if (!accessToken.ok) {
+          return jsonResponse({ error: accessToken.error }, 400);
+        }
+        return await handleGetCurrentUser({ accessToken: accessToken.value });
+      }
+
+      // POST /user/repos — list the user's public repos
+      if (path === '/user/repos') {
+        const accessToken = requireString(body, 'accessToken');
+        if (!accessToken.ok) {
+          return jsonResponse({ error: accessToken.error }, 400);
+        }
+        return await handleListMyRepos({ accessToken: accessToken.value });
+      }
+
+      return jsonResponse({ error: `Unknown path: ${path}` }, 404);
     } catch (err) {
-      log('error', 'Failed to reach GitHub token endpoint', { error: String(err) });
-      return jsonResponse({ error: 'Could not reach GitHub token endpoint' }, 503);
+      // Any error from a handler (e.g., callGitHub throwing) lands here.
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      log('error', 'Handler error', { path, message });
+      return jsonResponse({ error: message }, 500);
     }
-
-    if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text().catch(() => '<no body>');
-      log('error', 'GitHub token endpoint returned non-OK', {
-        status: tokenResponse.status,
-        body: errorText.slice(0, 500),
-      });
-      return jsonResponse(
-        { error: `GitHub token exchange failed (HTTP ${tokenResponse.status})` },
-        502,
-      );
-    }
-
-    const tokenData = (await tokenResponse.json()) as {
-      access_token?: string;
-      scope?: string;
-      token_type?: string;
-      error?: string;
-      error_description?: string;
-    };
-
-    if (tokenData.error) {
-      log('error', 'GitHub returned an error in the token response', {
-        error: tokenData.error,
-        description: tokenData.error_description,
-      });
-      return jsonResponse(
-        { error: `GitHub error: ${tokenData.error_description ?? tokenData.error}` },
-        400,
-      );
-    }
-
-    if (!tokenData.access_token) {
-      log('error', 'No access_token in GitHub response', { response: tokenData });
-      return jsonResponse({ error: 'GitHub response missing access_token' }, 500);
-    }
-
-    log('info', 'Successfully exchanged GitHub code for access token', {
-      scope: tokenData.scope,
-      tokenType: tokenData.token_type,
-    });
-
-    return jsonResponse({
-      accessToken: tokenData.access_token,
-      scope: tokenData.scope ?? '',
-      tokenType: tokenData.token_type ?? 'bearer',
-    });
   },
 };
