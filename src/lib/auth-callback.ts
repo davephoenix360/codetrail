@@ -17,6 +17,7 @@ import * as Linking from 'expo-linking';
 import { GithubAuthProvider, signInWithCredential } from 'firebase/auth';
 
 import { auth } from './firebase';
+import { setGitHubToken } from './github-token-store';
 
 const GITHUB_OAUTH_CLIENT_ID = process.env.EXPO_PUBLIC_GITHUB_OAUTH_CLIENT_ID ?? '';
 const EXCHANGE_URL = process.env.EXPO_PUBLIC_CODETRAIL_EXCHANGE_URL ?? '';
@@ -171,6 +172,11 @@ export async function processAuthCallback(
     // 4. Sign in to Firebase with the GitHub access token
     try {
       const credential = GithubAuthProvider.credential(accessToken);
+      // Stash the token BEFORE signInWithCredential consumes it. We need
+      // it for calling GitHub's API via the Cloudflare Worker proxy
+      // (e.g. /user, /user/repos). Firebase's signInWithCredential does
+      // not expose the OAuth provider's token back to us after this.
+      setGitHubToken(accessToken);
       await signInWithCredential(auth, credential);
       // The useAuth hook's onAuthStateChanged will update the UI. No
       // setLoading(false) here — the app is signing in.
