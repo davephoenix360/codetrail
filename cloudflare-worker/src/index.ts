@@ -218,6 +218,13 @@ async function handleCodeExchange(
 
 /** Shape we return to the client for a GitHub user profile. */
 interface GitHubUserResponse {
+  // `id` is the stable, unique GitHub user ID. We use it as the Firestore
+  // doc ID for both the lookup index (`githubAccounts/{id}`) and the linked
+  // account subcollection (`users/{uid}/linkedAccounts/{id}`). It's a
+  // 64-bit integer, but currently well under Number.MAX_SAFE_INTEGER
+  // (~9×10^15), so JSON number is safe. If GitHub ever exceeds 2^53, we'd
+  // need to switch to a string.
+  id: number;
   login: string;
   name: string | null;
   avatar_url: string;
@@ -233,6 +240,7 @@ async function handleGetCurrentUser(
 ): Promise<Response> {
   const data = await callGitHub<GitHubUserResponse>(body.accessToken, '/user');
   return jsonResponse({
+    id: data.id,
     login: data.login,
     name: data.name,
     avatarUrl: data.avatar_url,

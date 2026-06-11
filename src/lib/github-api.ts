@@ -22,6 +22,8 @@ if (__DEV__ && !EXCHANGE_URL) {
 // ---------------------------------------------------------------------------
 
 export interface GitHubUser {
+  /** Stable, unique GitHub user ID. Used as the Firestore doc ID everywhere. */
+  id: number;
   login: string;
   name: string | null;
   avatarUrl: string;
