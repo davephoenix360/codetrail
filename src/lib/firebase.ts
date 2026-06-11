@@ -18,6 +18,7 @@
  */
 import { FirebaseApp, getApps, initializeApp } from 'firebase/app';
 import { Auth, getAuth, initializeAuth } from 'firebase/auth';
+import { Firestore, getFirestore } from 'firebase/firestore';
 // @ts-expect-error - getReactNativePersistence is exported by @firebase/auth's RN build, but tsc doesn't resolve the "react-native" package.json field
 import { getReactNativePersistence } from '@firebase/auth';
 import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
@@ -56,3 +57,4 @@ try {
 
 export const app = firebaseApp;
 export const auth = _auth;
+export const db: Firestore = getFirestore(firebaseApp);
