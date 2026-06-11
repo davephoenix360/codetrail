@@ -133,15 +133,15 @@ export default function ReposScreen() {
       } catch (e) {
         // Surface the actual error so we can see if it's a permission
         // problem, network issue, or something else. v2.0 will use a toast.
-        const message = e instanceof Error ? e.message : String(e);
         const code =
           e && typeof e === 'object' && 'code' in e
             ? String((e as { code: unknown }).code)
             : 'unknown';
+        const message = e instanceof Error ? e.message : String(e);
         console.warn('[codetrail] trackRepo failed:', code, message);
         Alert.alert(
           'Could not track that one',
-          `Firestore rejected the write (${code}). If this keeps happening, the most common cause is unpublished security rules.`,
+          `code: ${code}\nmessage: ${message}\nrepo: ${repo.fullName}`,
           [{ text: 'OK' }],
         );
       }
@@ -156,15 +156,15 @@ export default function ReposScreen() {
         await untrackRepo(user.uid, repoFullName);
         setTracked((prev) => prev.filter((r) => r.repoFullName !== repoFullName));
       } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
         const code =
           e && typeof e === 'object' && 'code' in e
             ? String((e as { code: unknown }).code)
             : 'unknown';
+        const message = e instanceof Error ? e.message : String(e);
         console.warn('[codetrail] untrackRepo failed:', code, message);
         Alert.alert(
           'Could not untrack that one',
-          `Firestore rejected the write (${code}). If this keeps happening, the most common cause is unpublished security rules.`,
+          `code: ${code}\nmessage: ${message}\nrepo: ${repoFullName}`,
           [{ text: 'OK' }],
         );
       }

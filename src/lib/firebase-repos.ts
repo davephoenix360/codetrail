@@ -76,6 +76,15 @@ function stripNulls<T extends Record<string, unknown>>(
   for (const [k, v] of Object.entries(obj)) {
     if (v !== null && v !== undefined) out[k] = v;
   }
+  if (__DEV__) {
+    // Diagnostic: show what was filtered. Cheap to log; only in dev.
+    const filtered = Object.keys(obj).filter(
+      (k) => obj[k] === null || obj[k] === undefined,
+    );
+    if (filtered.length > 0) {
+      console.log(`[firebase-repos] stripNulls removed: ${filtered.join(', ')}`);
+    }
+  }
   return out as { [K in keyof T]: Exclude<T[K], null | undefined> };
 }
 
@@ -103,21 +112,41 @@ export function isTracked(
 
 /** Add (or update) a tracked repo. The repoFullName is the doc ID. */
 export async function trackRepo(uid: string, repo: GitHubRepo): Promise<void> {
-  await setDoc(
-    trackedRepoDoc(uid, repo.fullName),
-    stripNulls({
-      repoId: repo.id,
-      repoFullName: repo.fullName,
-      name: repo.name,
-      description: repo.description,
-      language: repo.language,
-      stars: repo.stars,
-      updatedAt: repo.updatedAt,
-      trackedAt: serverTimestamp(),
-      lastFetchedAt: Date.now(),
-    }),
-    { merge: true },
-  );
+  const path = `users/${uid}/trackedRepos/${repo.fullName}`;
+  const rawPayload = {
+    repoId: repo.id,
+    repoFullName: repo.fullName,
+    name: repo.name,
+    description: repo.description,
+    language: repo.language,
+    stars: repo.stars,
+    updatedAt: repo.updatedAt,
+    trackedAt: serverTimestamp(),
+    lastFetchedAt: Date.now(),
+  };
+  const cleaned = stripNulls(rawPayload);
+
+  if (__DEV__) {
+    console.log(`[firebase-repos] trackRepo → ${path}`);
+    console.log('[firebase-repos] raw payload:', JSON.stringify(rawPayload, null, 2));
+    console.log('[firebase-repos] cleaned payload:', JSON.stringify(cleaned, null, 2));
+  }
+
+  try {
+    await setDoc(trackedRepoDoc(uid, repo.fullName), cleaned, { merge: true });
+    if (__DEV__) console.log(`[firebase-repos] trackRepo OK for ${repo.fullName}`);
+  } catch (e) {
+    // Re-throw with all error details. The caller in repos.tsx will
+    // surface the message via Alert.
+    if (__DEV__) {
+      console.error(`[firebase-repos] trackRepo FAILED for ${repo.fullName}`);
+      console.error('[firebase-repos] path:', path);
+      console.error('[firebase-repos] cleaned payload (failing):', JSON.stringify(cleaned, null, 2));
+      console.error('[firebase-repos] full error object:', e);
+      console.error('[firebase-repos] error stack:', e instanceof Error ? e.stack : '<no stack>');
+    }
+    throw e;
+  }
 }
 
 /** Remove a tracked repo. No-op if it wasn't tracked. */
