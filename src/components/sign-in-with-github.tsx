@@ -53,12 +53,14 @@ import { auth } from '@/lib/firebase';
 const GITHUB_OAUTH_CLIENT_ID = process.env.EXPO_PUBLIC_GITHUB_OAUTH_CLIENT_ID ?? '';
 const EXCHANGE_URL = process.env.EXPO_PUBLIC_CODETRAIL_EXCHANGE_URL ?? '';
 
-// On Android, Expo Go only registers an intent filter for `exp+<slug>://`.
-// Bare `<slug>://` is registered by standalone builds (after `eas build`).
-// Since we're in Expo Go for development, use the `exp+` prefix. When we
-// eventually ship a standalone build, we'll need to switch to plain
-// `codetrail://` (and update the GitHub OAuth App's callback URL too).
-const REDIRECT_URI = 'exp+codetrail://auth/callback';
+// GitHub OAuth App callback URL — points at our Cloudflare Worker, which
+// serves a tiny HTML page that auto-redirects to the deep link. We use
+// HTTPS (not the bare `exp+codetrail://` scheme) because Chrome Custom
+// Tabs on Android sometimes fail to dispatch `exp+<slug>://` URLs back
+// to the app. The static HTML approach is rock-solid: the browser is
+// happy with HTTPS, executes the JS, and the OS reliably hands the
+// `exp+codetrail://` URL off to Expo Go.
+const REDIRECT_URI = 'https://codetrail-oauth.davediepreye05.workers.dev/auth/callback';
 // Same scopes we asked for originally. `read:user` + `user:email` for identity,
 // `public_repo` so we can later list the user's repos to track.
 const GITHUB_SCOPES = ['read:user', 'user:email', 'public_repo'];
