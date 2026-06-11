@@ -1,0 +1,13 @@
+name = "codetrail-exchange"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+# Account ID — set via `CLOUDFLARE_ACCOUNT_ID` env var when deploying,
+# OR uncomment and hardcode below. Find it in the Cloudflare dashboard
+# right sidebar after signing in.
+# account_id = "REPLACE_WITH_YOUR_ACCOUNT_ID"
+
+# Variables that aren't sensitive — set at deploy time, visible in dashboard.
+# Sensitive values (client_secret) are set via `wrangler secret put`.
+[vars]
+LOG_LEVEL = "info"

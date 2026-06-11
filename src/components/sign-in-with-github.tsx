@@ -1,5 +1,5 @@
 /**
- * Sign in with GitHub via WebBrowser + Cloud Function.
+ * Sign in with GitHub via WebBrowser + Cloudflare Worker.
  *
  * Why this is more complex than `signInWithRedirect`:
  * - Firebase v12's React Native build intentionally omits
@@ -9,7 +9,7 @@
  *   doesn't ship one out of the box.
  * - The proper RN pattern is: open the GitHub OAuth URL in
  *   `expo-web-browser`, capture the `code` from the deep-link callback,
- *   exchange that code for an access token via a Cloud Function (which
+ *   exchange that code for an access token via a Cloudflare Worker (which
  *   holds the `client_secret` securely), then use the access token with
  *   `signInWithCredential`.
  *
@@ -23,19 +23,21 @@
  *      - WebBrowser detects the redirect_uri match and returns the URL
  *   3. Parse the `code` and `state` from the callback URL.
  *   4. Verify `state` matches what we generated (CSRF protection).
- *   5. Call the `exchangeGitHubCode` Cloud Function with `{ code, redirectUri }`.
- *   6. Cloud Function returns `{ accessToken }`.
+ *   5. POST to the Cloudflare Worker with `{ code, redirectUri }`.
+ *   6. Worker returns `{ accessToken }`.
  *   7. Use `GithubAuthProvider.credential(accessToken)` with
  *      `signInWithCredential` to sign the user in to Firebase.
  *
  * Required env vars (in .env):
- *   EXPO_PUBLIC_GITHUB_OAUTH_CLIENT_ID  - the GitHub OAuth app's client_id
- *                                          (safe to embed — public)
+ *   EXPO_PUBLIC_GITHUB_OAUTH_CLIENT_ID   - the GitHub OAuth app's client_id
+ *                                           (safe to embed — public)
+ *   EXPO_PUBLIC_CODETRAIL_EXCHANGE_URL   - the Cloudflare Worker URL, e.g.
+ *                                           https://codetrail-exchange.<subdomain>.workers.dev
  *
- * Required secrets (set via `firebase functions:secrets:set`):
- *   GITHUB_OAUTH_CLIENT_ID              - same value as above (server-side)
- *   GITHUB_OAUTH_CLIENT_SECRET          - the GitHub OAuth app's client_secret
- *                                          (NEVER embed in the app)
+ * Required secrets (set via `wrangler secret put`):
+ *   GITHUB_OAUTH_CLIENT_ID               - same value as above (server-side)
+ *   GITHUB_OAUTH_CLIENT_SECRET           - the GitHub OAuth app's client_secret
+ *                                           (NEVER embed in the app)
  *
  * Required GitHub OAuth app config:
  *   Authorization callback URL = codetrail://auth/callback
@@ -44,11 +46,11 @@ import { useState } from 'react';
 import { Pressable, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { GithubAuthProvider, signInWithCredential } from 'firebase/auth';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 
-import { auth, app } from '@/lib/firebase';
+import { auth } from '@/lib/firebase';
 
 const GITHUB_OAUTH_CLIENT_ID = process.env.EXPO_PUBLIC_GITHUB_OAUTH_CLIENT_ID ?? '';
+const EXCHANGE_URL = process.env.EXPO_PUBLIC_CODETRAIL_EXCHANGE_URL ?? '';
 const REDIRECT_URI = 'codetrail://auth/callback';
 // Same scopes we asked for originally. `read:user` + `user:email` for identity,
 // `public_repo` so we can later list the user's repos to track.
@@ -81,6 +83,13 @@ export function SignInWithGitHub() {
     if (!GITHUB_OAUTH_CLIENT_ID) {
       console.warn(
         '[codetrail] EXPO_PUBLIC_GITHUB_OAUTH_CLIENT_ID is missing. Add it to .env and reload.',
+      );
+      setLoading(false);
+      return;
+    }
+    if (!EXCHANGE_URL) {
+      console.warn(
+        '[codetrail] EXPO_PUBLIC_CODETRAIL_EXCHANGE_URL is missing. Deploy the Cloudflare Worker and add its URL to .env.',
       );
       setLoading(false);
       return;
@@ -150,18 +159,24 @@ export function SignInWithGitHub() {
       return;
     }
 
-    // 5. Exchange the code for an access token via Cloud Function
+    // 5. Exchange the code for an access token via Cloudflare Worker
     let accessToken: string;
     try {
-      const functions = getFunctions(app);
-      const exchange = httpsCallable<
-        { code: string; redirectUri: string },
-        { accessToken: string; scope: string; tokenType: string }
-      >(functions, 'exchangeGitHubCode');
-      const { data } = await exchange({ code, redirectUri: REDIRECT_URI });
+      const response = await fetch(EXCHANGE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, redirectUri: REDIRECT_URI }),
+      });
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => '<no body>');
+        console.warn(`[codetrail] exchange worker returned ${response.status}:`, errBody);
+        setLoading(false);
+        return;
+      }
+      const data = (await response.json()) as { accessToken: string; scope: string; tokenType: string };
       accessToken = data.accessToken;
     } catch (e: unknown) {
-      console.warn('[codetrail] exchangeGitHubCode failed:', e);
+      console.warn('[codetrail] exchange worker call failed:', e);
       setLoading(false);
       return;
     }
