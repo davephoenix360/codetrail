@@ -1,17 +1,24 @@
 /**
- * Firebase initialization (React Native).
+ * Firebase v12 initialization for React Native.
  *
- * Firebase v12 splits the public `firebase/auth` (browser-first exports)
- * from the lower-level `@firebase/auth` (which has a `react-native`
- * package.json field pointing to a build that re-exports
- * `getReactNativePersistence`). tsc doesn't honor the `react-native` field
- * for type resolution, so we use `@ts-expect-error` for that one import.
- * Metro (the RN bundler) resolves the import to the correct RN build at
- * bundle time, so it works at runtime even though tsc complains.
+ * Two key things happening here:
+ *
+ * 1. `initializeAuth` (not `getAuth`) with `getReactNativePersistence`:
+ *    - On web, Firebase defaults to `inMemoryPersistence` or `indexedDBPersistence`
+ *      depending on the platform.
+ *    - On React Native, the web persistence doesn't work — we need AsyncStorage.
+ *    - `getReactNativePersistence` is exported by `@firebase/auth`'s RN build
+ *      (via its `react-native` package.json field), but TypeScript's resolution
+ *      doesn't honor that field. So we use `@ts-expect-error` to bypass tsc
+ *      while Metro (the bundler) resolves it correctly at bundle time.
+ *
+ * 2. Fallback to `getAuth(app)`:
+ *    - If `initializeAuth` throws (e.g., it was already called once), we fall
+ *      back to `getAuth(app)`. This can happen with hot reload.
  */
-import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
-import { initializeAuth, getAuth, Auth } from 'firebase/auth';
-// @ts-expect-error -- exported by @firebase/auth's RN build; tsc doesn't know
+import { FirebaseApp, getApps, initializeApp } from 'firebase/app';
+import { Auth, getAuth, initializeAuth } from 'firebase/auth';
+// @ts-expect-error - getReactNativePersistence is exported by @firebase/auth's RN build, but tsc doesn't resolve the "react-native" package.json field
 import { getReactNativePersistence } from '@firebase/auth';
 import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -24,17 +31,14 @@ const firebaseConfig = {
   appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
 
+// Sanity check: surface config errors early (in dev console) so we don't get
+// a silent "stuck on loading" state from invalid config.
+const present = Object.entries(firebaseConfig).filter(([_, v]) => v).map(([k]) => k);
 if (__DEV__) {
-  const present = Object.entries(firebaseConfig).filter(([, v]) => v).map(([k]) => k);
-  const missing = Object.entries(firebaseConfig).filter(([, v]) => !v).map(([k]) => k);
-  console.log(
-    `[firebase] config: ${present.length} present (${present.join(', ')})${missing.length ? `, ${missing.length} MISSING (${missing.join(', ')})` : ''}`
-  );
+  console.log(`[firebase] config: ${present.length} present (${present.join(', ')})`);
 }
 
-export const app: FirebaseApp = getApps().length
-  ? getApps()[0]!
-  : initializeApp(firebaseConfig);
+const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0]!;
 
 let _auth: Auth;
 try {
@@ -42,10 +46,10 @@ try {
     persistence: getReactNativePersistence(ReactNativeAsyncStorage),
   });
 } catch (err) {
-  // initializeAuth can only be called once per app. Hot-reload in dev re-runs
-  // the module; in that case we fall back to the default auth instance.
+  // initializeAuth throws if called more than once (e.g., on hot reload).
+  // Fall back to getAuth, which returns the existing instance.
   if (__DEV__) {
-    console.warn('[firebase] initializeAuth already called, falling back:', err);
+    console.warn('[firebase] initializeAuth failed, falling back to getAuth:', err);
   }
   _auth = getAuth(app);
 }
