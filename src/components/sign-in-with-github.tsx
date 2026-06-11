@@ -53,14 +53,17 @@ import { auth } from '@/lib/firebase';
 const GITHUB_OAUTH_CLIENT_ID = process.env.EXPO_PUBLIC_GITHUB_OAUTH_CLIENT_ID ?? '';
 const EXCHANGE_URL = process.env.EXPO_PUBLIC_CODETRAIL_EXCHANGE_URL ?? '';
 
-// GitHub OAuth App callback URL — points at our Cloudflare Worker, which
-// serves a tiny HTML page that auto-redirects to the deep link. We use
-// HTTPS (not the bare `exp+codetrail://` scheme) because Chrome Custom
-// Tabs on Android sometimes fail to dispatch `exp+<slug>://` URLs back
-// to the app. The static HTML approach is rock-solid: the browser is
-// happy with HTTPS, executes the JS, and the OS reliably hands the
-// `exp+codetrail://` URL off to Expo Go.
-const REDIRECT_URI = 'https://codetrail-oauth.davediepreye05.workers.dev/auth/callback';
+// GitHub OAuth App callback URL — uses the `exp://` deep-link convention
+// for Expo Go. This is the dev-mode format that the WebBrowser API expects
+// to recognize as a deep link back to the app; using an HTTPS URL instead
+// (as we did before) hits a known Expo bug (#23781) where the WebBrowser
+// returns `{ type: 'dismiss' }` with no URL ~30% of the time on Android.
+//
+// On a production standalone build, this would be `codetrail://auth/callback`.
+// For dev, the host:port points at the Metro dev server, and the `/--/`
+// separator tells Expo Router this is an in-app route (not a server path).
+// The code/state query params are appended by GitHub's 302 redirect.
+const REDIRECT_URI = 'exp://100.109.146.124:8081/--/auth/callback';
 // Same scopes we asked for originally. `read:user` + `user:email` for identity,
 // `public_repo` so we can later list the user's repos to track.
 const GITHUB_SCOPES = ['read:user', 'user:email', 'public_repo'];
@@ -240,7 +243,10 @@ export function SignInWithGitHub() {
       // 2. Open the system browser. This blocks until the user authorizes
       // and GitHub redirects to REDIRECT_URI.
       result = await WebBrowser.openAuthSessionAsync(authUrl.toString(), REDIRECT_URI);
-      if (__DEV__) console.log('[codetrail] WebBrowser.openAuthSessionAsync resolved:', result.type, result.url ?? '(no url)');
+      if (__DEV__) {
+        const url = result.type === 'success' ? result.url : '(no url)';
+        console.log('[codetrail] WebBrowser.openAuthSessionAsync resolved:', result.type, url);
+      }
     } catch (e) {
       console.warn('[codetrail] openAuthSessionAsync threw:', e);
       authHandlerRef.current = null;
