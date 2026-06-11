@@ -2,7 +2,7 @@
 
 > A mobile app that helps coding learners stay accountable to their side projects — with a friendly hype-man approach, not the guilt-trippy streak-shame of Duolingo.
 
-**Status:** Scaffolding complete (2026-06-10). Expo SDK 56 + TypeScript + Expo Router, 596 packages installed. Next: Firebase + GitHub OAuth auth spike.
+**Status:** Auth complete (2026-06-10). GitHub sign-in working end-to-end on Android (Expo Go) → Firebase Auth → home screen. Next: repository picker + dashboard.
 
 ## The pitch
 
@@ -10,10 +10,10 @@ Sign in with GitHub → pick the repos you're learning on → ship daily progres
 
 ## Tech stack
 
-- **Mobile:** React Native + Expo SDK 56 + TypeScript (Expo Router, New Architecture, reactCompiler, typedRoutes — all on)
-- **Backend:** Firebase (Auth + Firestore + Cloud Functions + FCM)
-- **Auth:** GitHub OAuth (via Firebase)
-- **GitHub data:** GitHub REST API, proxied through Cloud Functions (avoids token leakage, enables caching)
+- **Mobile:** React Native + Expo SDK 54 + TypeScript (Expo Router, New Architecture, reactCompiler, typedRoutes — all on)
+- **Backend:** Firebase (Auth + Firestore + FCM)
+- **Auth:** GitHub OAuth → Firebase Auth, with the `client_secret` proxied through a Cloudflare Worker (free tier, no Blaze needed)
+- **GitHub data:** GitHub REST API, proxied through the same Cloudflare Worker (avoids token leakage, enables caching)
 - **Push:** Expo Push + FCM
 
 ## Quick start
@@ -98,23 +98,26 @@ npx tsc --noEmit     # type-check
 
 ```
 codetrail/
-├── app.json                 # Expo config (name, slug, bundle IDs)
+├── app.json                 # Expo config (name, slug, bundle IDs, scheme)
 ├── package.json
 ├── tsconfig.json            # extends expo/tsconfig.base, @/* → src/* paths
-├── assets/                  # icons, splash, favicon
-├── scripts/
-│   └── reset-project.js     # wipes the example content from src/
+├── .env.example             # template for the per-developer .env
+├── assets/                  # icons (iOS, Android, web, splash)
+├── cloudflare-worker/       # GitHub → access-token exchanger (free tier)
+│   ├── src/index.ts
+│   ├── wrangler.toml
+│   └── deploy.sh
 ├── src/
 │   ├── app/                 # Expo Router (file-based routing)
 │   │   ├── _layout.tsx      # root layout
-│   │   ├── index.tsx        # home screen
-│   │   └── explore.tsx      # second screen
-│   ├── components/          # shared UI (ThemedText, ThemedView, etc.)
-│   ├── hooks/               # useColorScheme, useTheme
+│   │   ├── index.tsx        # home screen (sign-in / signed-in views)
+│   │   └── auth/callback.tsx  # OAuth deep-link handler
+│   ├── components/          # shared UI (SignInWithGitHub, ThemedText, ThemedView)
+│   ├── hooks/               # useAuth (Firebase auth state)
+│   ├── lib/                 # firebase.ts, auth-callback.ts
 │   ├── constants/           # theme tokens
-│   └── global.css           # web-only styles
+│   └── global.css           # web-only font CSS variables
 ├── BRIEF.md                 # full project brief
-├── NAMING.md                # name alternatives
 └── .gitignore
 ```
 

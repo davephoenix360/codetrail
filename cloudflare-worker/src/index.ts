@@ -5,10 +5,9 @@
  * returns the access token to the client. The client uses the access
  * token with `signInWithCredential` to sign in to Firebase Auth.
  *
- * This is a port of `functions/src/index.ts` (the Firebase Cloud Function
- * version) to Cloudflare Workers. We use Workers because they have a
- * generous free tier (100k requests/day, no credit card) while Cloud
- * Functions require the Firebase Blaze plan.
+ * We use Cloudflare Workers (free tier: 100k req/day, no credit card)
+ * rather than Firebase Cloud Functions, which would require the Blaze
+ * (pay-as-you-go) plan to make outbound HTTPS calls to GitHub.
  *
  * Flow:
  *   [RN app]  →  GitHub authorize URL (via expo-web-browser)
