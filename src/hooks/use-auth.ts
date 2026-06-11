@@ -21,53 +21,57 @@ export function useAuth() {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    let resolved = false;
-
     if (__DEV__) {
       console.log('[useAuth] subscribing to Firebase auth state');
     }
 
+    // The "fail-open" timer: if Firebase takes too long to report the initial
+    // auth state, give up and show the sign-in screen. The ref lets the
+    // onAuthStateChanged callback cancel the timer once we get a real update.
+    let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+      if (__DEV__) {
+        console.warn(
+          `[useAuth] auth state did not resolve in ${LOADING_TIMEOUT_MS}ms — forcing "signed out" so the sign-in screen renders`
+        );
+      }
+      setError(new Error(`Auth state timed out after ${LOADING_TIMEOUT_MS}ms`));
+      setLoading(false);
+      timer = null;
+    }, LOADING_TIMEOUT_MS);
+
+    const cancelTimer = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
+
     const unsub = onAuthStateChanged(
       auth,
       (u) => {
+        cancelTimer();
         if (__DEV__) {
           console.log(
             '[useAuth] state:',
             u ? `signed in (uid=${u.uid}, email=${u.email ?? 'n/a'})` : 'signed out'
           );
         }
-        if (resolved) return;
-        resolved = true;
         setUser(u);
         setLoading(false);
       },
       (err) => {
+        cancelTimer();
         if (__DEV__) {
           console.error('[useAuth] auth state error:', err);
         }
-        if (resolved) return;
-        resolved = true;
         setError(err);
         setLoading(false);
       }
     );
 
-    const timeout = setTimeout(() => {
-      if (!resolved) {
-        if (__DEV__) {
-          console.warn(
-            `[useAuth] auth state did not resolve in ${LOADING_TIMEOUT_MS}ms — forcing "signed out" so the sign-in screen renders`
-          );
-        }
-        resolved = true;
-        setError(new Error(`Auth state timed out after ${LOADING_TIMEOUT_MS}ms`));
-        setLoading(false);
-      }
-    }, LOADING_TIMEOUT_MS);
-
     return () => {
       unsub();
-      clearTimeout(timeout);
+      cancelTimer();
     };
   }, []);
 

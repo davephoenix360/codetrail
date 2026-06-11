@@ -13,15 +13,32 @@
  * case where the original React component tree is gone.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Linking from 'expo-linking';
 import { GithubAuthProvider, signInWithCredential } from 'firebase/auth';
 
 import { auth } from './firebase';
 
 const GITHUB_OAUTH_CLIENT_ID = process.env.EXPO_PUBLIC_GITHUB_OAUTH_CLIENT_ID ?? '';
 const EXCHANGE_URL = process.env.EXPO_PUBLIC_CODETRAIL_EXCHANGE_URL ?? '';
-// Must match REDIRECT_URI in components/sign-in-with-github.tsx and the
-// GitHub OAuth App's "Authorization callback URL" field.
-export const REDIRECT_URI = 'exp://100.109.146.124:8081/--/auth/callback';
+
+/**
+ * Deep-link URL that GitHub will redirect to after the user authorizes.
+ *
+ * `Linking.createURL()` returns the right URL for the current runtime:
+ *   - In Expo Go (dev):  `exp://<lan-ip>:<metro-port>/--/auth/callback`
+ *   - In a standalone build: `codetrail://auth/callback`
+ *     (matches the `scheme: "codetrail"` field in `app.json`)
+ *
+ * This means the same code works for any collaborator on their own machine
+ * (no hardcoded Tailscale IPs) and works in production without changes.
+ *
+ * The GitHub OAuth App's "Authorization callback URL" must include the
+ * exact URL `Linking.createURL()` produces for *your* dev environment. For
+ * Expo Go dev, register `exp://<your-lan-ip>:<metro-port>` (one entry covers
+ * all paths under that scheme). For production, register
+ * `codetrail://auth/callback`.
+ */
+export const REDIRECT_URI = Linking.createURL('/auth/callback');
 
 const STATE_STORAGE_KEY = '@codetrail/oauth-state';
 
