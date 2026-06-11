@@ -55,9 +55,17 @@ function trackedReposCol(uid: string) {
   return collection(db, 'users', uid, 'trackedRepos');
 }
 
-/** Build the Firestore document reference for a single tracked repo. */
-function trackedRepoDoc(uid: string, repoFullName: string) {
-  return doc(db, 'users', uid, 'trackedRepos', repoFullName);
+/**
+ * Build the Firestore document reference for a single tracked repo.
+ *
+ * IMPORTANT: doc IDs CANNOT contain `/` — Firestore uses slashes as path
+ * separators, so an ID like "davephoenix360/codetrail" parses as 5
+ * segments and the setDoc call fails with `invalid-argument`. We use the
+ * numeric GitHub repo ID instead (globally unique, no special chars).
+ * The human-readable `fullName` is still stored as a field.
+ */
+function trackedRepoDoc(uid: string, repoId: number) {
+  return doc(db, 'users', uid, 'trackedRepos', String(repoId));
 }
 
 /**
@@ -110,9 +118,9 @@ export function isTracked(
 // Writes
 // ---------------------------------------------------------------------------
 
-/** Add (or update) a tracked repo. The repoFullName is the doc ID. */
+/** Add (or update) a tracked repo. The GitHub repo ID is the doc ID. */
 export async function trackRepo(uid: string, repo: GitHubRepo): Promise<void> {
-  const path = `users/${uid}/trackedRepos/${repo.fullName}`;
+  const path = `users/${uid}/trackedRepos/${repo.id}`;
   const rawPayload = {
     repoId: repo.id,
     repoFullName: repo.fullName,
@@ -128,28 +136,21 @@ export async function trackRepo(uid: string, repo: GitHubRepo): Promise<void> {
 
   if (__DEV__) {
     console.log(`[firebase-repos] trackRepo → ${path}`);
-    console.log('[firebase-repos] raw payload:', JSON.stringify(rawPayload, null, 2));
-    console.log('[firebase-repos] cleaned payload:', JSON.stringify(cleaned, null, 2));
   }
 
   try {
-    await setDoc(trackedRepoDoc(uid, repo.fullName), cleaned, { merge: true });
+    await setDoc(trackedRepoDoc(uid, repo.id), cleaned, { merge: true });
     if (__DEV__) console.log(`[firebase-repos] trackRepo OK for ${repo.fullName}`);
   } catch (e) {
-    // Re-throw with all error details. The caller in repos.tsx will
-    // surface the message via Alert.
     if (__DEV__) {
       console.error(`[firebase-repos] trackRepo FAILED for ${repo.fullName}`);
-      console.error('[firebase-repos] path:', path);
-      console.error('[firebase-repos] cleaned payload (failing):', JSON.stringify(cleaned, null, 2));
-      console.error('[firebase-repos] full error object:', e);
-      console.error('[firebase-repos] error stack:', e instanceof Error ? e.stack : '<no stack>');
+      console.error('[firebase-repos] full error:', e);
     }
     throw e;
   }
 }
 
-/** Remove a tracked repo. No-op if it wasn't tracked. */
-export async function untrackRepo(uid: string, repoFullName: string): Promise<void> {
-  await deleteDoc(trackedRepoDoc(uid, repoFullName));
+/** Remove a tracked repo by its GitHub repo ID. No-op if it wasn't tracked. */
+export async function untrackRepo(uid: string, repoId: number): Promise<void> {
+  await deleteDoc(trackedRepoDoc(uid, repoId));
 }

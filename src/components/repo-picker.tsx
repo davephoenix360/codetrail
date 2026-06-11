@@ -30,7 +30,7 @@ export interface RepoPickerProps {
   loading: boolean;
   error: string | null;
   onTrack: (repo: GitHubRepo) => void;
-  onUntrack: (repoFullName: string) => void;
+  onUntrack: (repoId: number) => void;
   onRefresh: () => void;
   onClose: () => void;
 }
@@ -69,7 +69,7 @@ export function RepoPicker({
         stars={item.stars}
         tracked={isTracked}
         onToggle={() =>
-          isTracked ? onUntrack(item.fullName) : onTrack(item)
+          isTracked ? onUntrack(item.id) : onTrack(item)
         }
       />
     );

@@ -150,11 +150,11 @@ export default function ReposScreen() {
   );
 
   const handleUntrack = useCallback(
-    async (repoFullName: string) => {
+    async (repoId: number) => {
       if (!user) return;
       try {
-        await untrackRepo(user.uid, repoFullName);
-        setTracked((prev) => prev.filter((r) => r.repoFullName !== repoFullName));
+        await untrackRepo(user.uid, repoId);
+        setTracked((prev) => prev.filter((r) => r.repoId !== repoId));
       } catch (e) {
         const code =
           e && typeof e === 'object' && 'code' in e
@@ -164,7 +164,7 @@ export default function ReposScreen() {
         console.warn('[codetrail] untrackRepo failed:', code, message);
         Alert.alert(
           'Could not untrack that one',
-          `code: ${code}\nmessage: ${message}\nrepo: ${repoFullName}`,
+          `code: ${code}\nmessage: ${message}\nrepoId: ${repoId}`,
           [{ text: 'OK' }],
         );
       }
