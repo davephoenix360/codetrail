@@ -12,7 +12,7 @@
  *
  * Hype-man voice throughout. No shame, no comparison-bait.
  */
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from './themed-text';
 import { WeeklyChart } from './weekly-chart';
@@ -34,9 +34,11 @@ interface Props {
   state: State;
   /** True if the user has no tracked repos yet. Shows a different empty state. */
   noTrackedRepos: boolean;
+  /** Fires the system share sheet with the streak card. Only shown in 'ready'. */
+  onShare?: () => void;
 }
 
-export function StreakSection({ state, noTrackedRepos }: Props) {
+export function StreakSection({ state, noTrackedRepos, onShare }: Props) {
   // Different empty state for "no repos tracked" — softer, no chart.
   if (noTrackedRepos && state.status !== 'ready') {
     return (
@@ -98,6 +100,18 @@ export function StreakSection({ state, noTrackedRepos }: Props) {
       </ThemedText>
       <View style={styles.chartSpacer} />
       <WeeklyChart weekly={weekly} streakLength={streak} />
+      {onShare ? (
+        <Pressable
+          onPress={onShare}
+          accessibilityRole="button"
+          accessibilityLabel="Share your streak"
+          style={({ pressed }) => [styles.shareBtn, pressed && styles.shareBtnPressed]}
+        >
+          <ThemedText type="default" style={styles.shareLabel}>
+            Share
+          </ThemedText>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -137,5 +151,22 @@ const styles = StyleSheet.create({
   },
   chartSpacer: {
     height: Spacing.three,
+  },
+  shareBtn: {
+    alignSelf: 'flex-end',
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#30363d',
+    marginTop: Spacing.three,
+  },
+  shareBtnPressed: {
+    backgroundColor: '#161b22',
+  },
+  shareLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#208AEF',
   },
 });

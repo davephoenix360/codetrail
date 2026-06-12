@@ -371,3 +371,43 @@ export function formatWeeklyLine(totalThisWeek: number): string {
   }
   return `${totalThisWeek} commits this week. You're on fire.`;
 }
+
+/**
+ * Build a share-friendly message for the system share sheet.
+ *
+ * Hype-man voice. Hints at the streak number, doesn't brag. Ends with
+ * a soft CTA so the recipient knows what the link is about.
+ *
+ * Examples:
+ *   formatShareMessage({streak: 7, shippedToday: true, ...}, 'davephoenix360')
+ *     → "🔥 7-day streak on @CodeTrail — davephoenix360 is on fire this week.\n\nTracking what I ship. Try it: https://codetrail.app"
+ *   formatShareMessage({streak: 0, shippedToday: false, ...}, 'davephoenix360')
+ *     → "Back at it on @CodeTrail — davephoenix360's streak resets today.\n\nThe streak's not going to build itself."
+ */
+export function formatShareMessage(
+  result: StreakResult,
+  login: string,
+): string {
+  // Plain handle, no @ — the message already says "@CodeTrail" so a second
+  // @ before the handle reads cluttered. The function takes a bare login
+  // (e.g. "davephoenix360") and strips a leading @ if the caller passed one.
+  const handle = login.startsWith('@') ? login.slice(1) : login;
+  const totalThisWeek = result.weekly.reduce((sum, d) => sum + d.count, 0);
+
+  let line: string;
+  if (result.streak >= 7) {
+    line = `${result.streak}-day streak on @CodeTrail — ${handle} is on fire this week.`;
+  } else if (result.streak >= 3) {
+    line = `${result.streak}-day streak on @CodeTrail — ${handle} is showing up.`;
+  } else if (result.streak >= 1) {
+    line = `${result.streak}-day streak on @CodeTrail — ${handle}'s keeping it going.`;
+  } else if (result.forgotToPushHint) {
+    line = `Back at it on @CodeTrail — ${handle}'s streak needs a push. 🫠`;
+  } else {
+    line = `Back at it on @CodeTrail — ${handle}'s streak resets today.`;
+  }
+
+  // Two-line message: hype line + soft CTA. The CTA is what gets the
+  // recipient to actually open the link.
+  return `${line}\n\nTracking what I ship. Try it: https://codetrail.app`;
+}

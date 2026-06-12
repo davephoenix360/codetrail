@@ -19,6 +19,7 @@ import {
   Modal,
   Pressable,
   RefreshControl,
+  Share,
   StyleSheet,
   View,
 } from 'react-native';
@@ -34,6 +35,7 @@ import { useStreak } from '@/hooks/use-streak';
 import { listTrackedRepos, trackRepo, untrackRepo } from '@/lib/firebase-repos';
 import type { TrackedRepo } from '@/lib/firebase-repos';
 import { GitHubApiError, listMyRepos, type GitHubRepo } from '@/lib/github-api';
+import { formatShareMessage } from '@/lib/streak';
 import { Spacing } from '@/constants/theme';
 
 type LoadState = 'loading' | 'ready' | 'error';
@@ -66,6 +68,39 @@ export default function ReposScreen() {
     login: userProfile?.login ?? null,
     repos: tracked,
   });
+
+  // ---- Share streak (system share sheet) ----
+  // Fires the OS-native share sheet with a hype-man message. No third-party
+  // deps — uses react-native's built-in Share API. On iOS this is the bottom
+  // sheet; on Android, the system chooser.
+  const handleShare = useCallback(async () => {
+    if (streakState.status !== 'ready') return;
+    const login = userProfile?.login;
+    if (!login) {
+      Alert.alert('Not ready yet', 'We need your GitHub handle before sharing. Try again in a moment.');
+      return;
+    }
+    const message = formatShareMessage(streakState.data, login);
+    try {
+      const result = await Share.share(
+        {
+          message,
+          // iOS-only title — falls back to the app name in the chooser.
+          title: 'My CodeTrail streak',
+        },
+        {
+          // iOS subject line (email, etc.). Android ignores.
+          subject: 'My CodeTrail streak',
+        },
+      );
+      if (__DEV__ && result.action === Share.sharedAction) {
+        console.log('[share] shared to', result.activityType ?? 'unknown');
+      }
+    } catch (e) {
+      // Most common: user dismissed — not actually an error, but log it.
+      if (__DEV__) console.warn('[share] cancelled or failed:', e);
+    }
+  }, [streakState, userProfile]);
 
   // Derived: set of full names of currently-tracked repos (for picker toggle state).
   const trackedFullNames = useMemo(
@@ -258,6 +293,7 @@ export default function ReposScreen() {
             <StreakSection
               state={streakState}
               noTrackedRepos={true}
+              onShare={handleShare}
             />
             <View style={styles.center}>
               <ThemedText type="subtitle" style={styles.emptyHeading}>
@@ -281,6 +317,7 @@ export default function ReposScreen() {
                   <StreakSection
                     state={streakState}
                     noTrackedRepos={false}
+                    onShare={handleShare}
                   />
                   <ThemedText type="default" style={[styles.muted, styles.spacedTop, styles.listHeader]}>
                     Tracked projects
