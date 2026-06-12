@@ -347,16 +347,31 @@ export async function processAuthCallback(
     }
 
     if (lookup && lookup.uid === newUid) {
-      // CASE C: re-auth. Just touch lastSeen.
+      // CASE C: re-auth. Touch lastSeen AND refresh the stored access token.
+      //
+      // Why refresh the token? `signInWithCredential` just proved this fresh
+      // token is valid for the current GitHub user. The token in Firestore
+      // (from the original sign-in) might be revoked, expired by app config
+      // change, or stale. Storing the fresh one keeps `useAuth().githubAccessToken`
+      // working without forcing the user to re-link.
       try {
-        await setDoc(
-          doc(db, 'users', newUid),
-          { lastSeenAt: serverTimestamp() },
-          { merge: true },
-        );
+        await Promise.all([
+          setDoc(
+            doc(db, 'users', newUid),
+            { lastSeenAt: serverTimestamp() },
+            { merge: true },
+          ),
+          // linkGithubAccount with isFirstForUser=false updates the
+          // linkedAccounts doc (overwrites the stored accessToken, login,
+          // avatarUrl) and the public lookup (login, avatarUrl). It does
+          // NOT touch primaryGithubId, so the existing primary is preserved.
+          linkGithubAccount(newUid, profile, accessToken, { isFirstForUser: false }),
+        ]);
       } catch (e) {
-        // Non-fatal — the user is signed in, we just couldn't bump lastSeen.
-        console.warn('[codetrail] touch lastSeen on re-auth failed:', e);
+        // Non-fatal — the user is signed in, we just couldn't refresh the
+        // stored token. They'll be forced to re-link on next token-needed
+        // action (e.g., loading the repo picker). v2.0 should surface this.
+        console.warn('[codetrail] touch lastSeen / refresh token on re-auth failed:', e);
       }
       return { kind: 'reAuth', githubLogin: profile.login, githubId: profile.id };
     }
