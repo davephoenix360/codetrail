@@ -17,7 +17,7 @@
  *   - error:            → / (sign-in screen) and surface the error message
  */
 import { useEffect, useRef } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { processAuthCallback, REDIRECT_URI } from '@/lib/auth-callback';
@@ -61,11 +61,16 @@ export default function AuthCallbackRoute() {
           router.replace('/settings/accounts');
           return;
         case 'error':
-          // Show the error in the dev console and on the home screen.
-          // The home screen's error banner will pick this up via a global
-          // event in a future iteration; for now, just navigate.
+          // Surface the error to the user — silent bounces are debug hell.
+          // We navigate home after, but the Alert blocks until dismissed so
+          // the user can actually read what went wrong.
           console.warn('[auth/callback] error:', result.message);
-          router.replace('/');
+          Alert.alert(
+            'Sign-in could not complete',
+            result.message,
+            [{ text: 'OK', onPress: () => router.replace('/') }],
+            { cancelable: false },
+          );
           return;
       }
     })();
