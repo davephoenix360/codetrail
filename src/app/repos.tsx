@@ -259,6 +259,16 @@ export default function ReposScreen() {
           </View>
           <View style={styles.headerActions}>
             <Pressable
+              onPress={() => router.push('/friends')}
+              accessibilityRole="button"
+              accessibilityLabel="Friends"
+              style={styles.headerButton}
+            >
+              <ThemedText type="small" style={styles.muted}>
+                Friends
+              </ThemedText>
+            </Pressable>
+            <Pressable
               onPress={signOut}
               accessibilityRole="button"
               accessibilityLabel="Sign out"
