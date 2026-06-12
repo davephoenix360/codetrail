@@ -5,19 +5,41 @@ rules_version = '2';
 // Data model:
 //   users/{uid}                              — user profile (single GitHub account)
 //   users/{uid}/trackedRepos/{repoId}        — repos the user is tracking for streak
+//   users/{uid}/friends/{githubId}           — friends added by the user (Phase 3)
+//   usersByLogin/{login}                     — PUBLIC reverse-lookup index
+//                                             githubLogin → uid. Used by the
+//                                             add-friend flow to check whether
+//                                             a GitHub user is also on CodeTrail.
 //
 // All access is denied by default. A user can only read/write their own
-// documents. There is no public read, no cross-user access, no admin SDK
-// in the client.
+// documents, with one public exception: `usersByLogin` is readable by anyone
+// so we can resolve "is @tino on CodeTrail?" without server-side hops.
+// The privacy tradeoff: knowing a GitHub login maps to some CodeTrail uid.
+// Mitigated by GitHub's large ID space; we'll move this behind a worker
+// with Firebase Admin SDK in v2.0 (it's the same fix we deferred for the
+// old `githubAccounts` collection).
 //
 // The access token lives on the user profile doc itself
 // (`users/{uid}.githubAccessToken`). When we add multi-account (deferred to
 // v2.0), the token will move to a per-account subcollection.
 //
-// Tracked repos use GitHub numeric `repoId` as the doc ID (NOT `fullName` —
-// see skill `firestore-doc-id-constraints`).
+// Tracked repos and friends use GitHub numeric `id` (not `fullName` / `login`)
+// as the doc ID — see skill `firestore-doc-id-constraints`. (For `usersByLogin`,
+// the doc ID IS the login; logins are always URL-safe ASCII so this is fine.)
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ---- Public reverse-lookup: GitHub login → CodeTrail uid ----
+    // Anyone can read (to check "is my friend on CodeTrail?"). Only the
+    // owning authenticated user can create their own entry. No updates or
+    // deletes by the user — the doc is the public mapping. (Login changes
+    // on GitHub are rare and out of scope for MVP; admin can clean up.)
+    match /usersByLogin/{login} {
+      allow read: if true;
+      allow create: if request.auth != null
+                    && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
 
     // User profile: only the owning user can read or write.
     match /users/{uid} {
@@ -25,6 +47,12 @@ service cloud.firestore {
 
       // Tracked repos: a sub-collection of the user.
       match /trackedRepos/{repoId} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+
+      // Friends (Phase 3): a sub-collection of the user, keyed by GitHub's
+      // stable numeric `githubId` (not `login`, which can change).
+      match /friends/{githubId} {
         allow read, write: if request.auth != null && request.auth.uid == uid;
       }
     }

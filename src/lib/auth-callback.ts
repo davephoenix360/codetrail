@@ -247,6 +247,32 @@ export async function processAuthCallback(
       };
     }
 
+    // 8. Maintain the public reverse-lookup index. Maps `githubLogin` →
+    //    `uid` so the add-friend flow can ask "is @X on CodeTrail?"
+    //    without a server-side hop. Public-read (per firestore.rules).
+    //    Only the owning user can create their own entry. Doc ID is
+    //    lowercased so lookups are case-insensitive (GitHub logins are
+    //    case-insensitive on the platform).
+    try {
+      await setDoc(
+        doc(db, 'usersByLogin', profile.login.toLowerCase()),
+        {
+          uid,
+          login: profile.login,
+          avatarUrl: profile.avatarUrl,
+          addedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+    } catch (e) {
+      // Non-fatal — the user can still sign in and use the app. The lookup
+      // just won't be able to find them. Log it for diagnosis.
+      console.warn(
+        '[codetrail] failed to write usersByLogin index (non-fatal):',
+        e,
+      );
+    }
+
     return isNewUser
       ? { kind: 'newUser', githubLogin: profile.login, githubId: profile.id }
       : { kind: 'returning', githubLogin: profile.login, githubId: profile.id };
