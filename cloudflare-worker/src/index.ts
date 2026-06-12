@@ -9,6 +9,9 @@
  *   POST /user            — Get the authenticated GitHub user's profile
  *                            (login, name, avatar, bio, public repo count,
  *                            follower/following counts).
+ *   POST /user/lookup     — Look up a public GitHub user by login. Used by
+ *                            the add-friend flow. Returns 404 if no such
+ *                            GitHub user.
  *   POST /user/repos      — List the authenticated user's public repos
  *                            (sorted by most recently updated, max 100).
  *   POST /repos/commits   — List a repo's commits by author since a date.
@@ -255,6 +258,45 @@ async function handleGetCurrentUser(
 }
 
 /**
+ * Trimmed shape for a public GitHub user (e.g. someone you're adding as a
+ * friend). `GET /users/{login}` returns a subset of the authenticated-user
+ * fields. We just need the stable bits.
+ */
+interface GitHubPublicUserResponse {
+  id: number;
+  login: string;
+  avatar_url: string;
+  html_url: string;
+  name: string | null;
+}
+
+/**
+ * Look up a public GitHub user by login. Used by the add-friend flow.
+ *
+ * The endpoint is unauthenticated on GitHub's side (60 req/hr) but we
+ * pass the caller's access token anyway so they get 5,000 req/hr from
+ * their own quota. This is a defensive choice: if 60 unauth requests
+ * become a bottleneck, we don't have to change the client.
+ *
+ * Returns 404 if GitHub has no such user.
+ */
+async function handleLookupGitHubUser(
+  body: { accessToken: string; login: string },
+): Promise<Response> {
+  const data = await callGitHub<GitHubPublicUserResponse>(
+    body.accessToken,
+    `/users/${encodeURIComponent(body.login)}`,
+  );
+  return jsonResponse({
+    id: data.id,
+    login: data.login,
+    avatarUrl: data.avatar_url,
+    htmlUrl: data.html_url,
+    name: data.name,
+  });
+}
+
+/**
  * Trimmed commit shape we return. We only need the date for the streak
  * computation; the SHA is for debugging if GitHub ever returns a weird
  * commit (e.g., a co-authored commit that should count but doesn't).
@@ -405,6 +447,20 @@ export default {
           return jsonResponse({ error: accessToken.error }, 400);
         }
         return await handleGetCurrentUser({ accessToken: accessToken.value });
+      }
+
+      // POST /user/lookup — look up a public GitHub user by login
+      if (path === '/user/lookup') {
+        const accessToken = requireString(body, 'accessToken');
+        if (!accessToken.ok) {
+          return jsonResponse({ error: accessToken.error }, 400);
+        }
+        const login = requireString(body, 'login');
+        if (!login.ok) return jsonResponse({ error: login.error }, 400);
+        return await handleLookupGitHubUser({
+          accessToken: accessToken.value,
+          login: login.value,
+        });
       }
 
       // POST /user/repos — list the user's public repos

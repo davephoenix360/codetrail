@@ -103,7 +103,29 @@ async function postToWorker<T>(path: string, body: Record<string, unknown>): Pro
 // Public API
 // ---------------------------------------------------------------------------
 
-/** Fetch the authenticated GitHub user's profile. */
+/**
+ * Trimmed shape for a public GitHub user (e.g. someone you're adding as
+ * a friend). Returned by the worker's `/user/lookup` endpoint.
+ */
+export interface GitHubPublicUser {
+  id: number;
+  login: string;
+  avatarUrl: string;
+  htmlUrl: string;
+  name: string | null;
+}
+
+/** Look up a public GitHub user by login. Returns 404 if no such user. */
+export async function getUserByLogin(
+  accessToken: string,
+  login: string,
+): Promise<GitHubPublicUser> {
+  return postToWorker<GitHubPublicUser>('/user/lookup', { accessToken, login });
+}
+
+/**
+ * Fetch the authenticated GitHub user's profile.
+ */
 export async function getCurrentUser(accessToken: string): Promise<GitHubUser> {
   return postToWorker<GitHubUser>('/user', { accessToken });
 }
