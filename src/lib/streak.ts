@@ -33,7 +33,7 @@ export interface DailyCommitCount {
 
 export interface StreakResult {
   /** Consecutive days with ≥1 commit, ending at the most recent ship day
-   *  (which may be today, yesterday, or earlier if the user took a break). */
+   *  (which may be today, or up to STREAK_GRACE_DAYS ago). */
   streak: number;
   /** True if the user has shipped at least once today (local time). */
   shippedToday: boolean;
@@ -47,16 +47,33 @@ export interface StreakResult {
   reposScanned: number;
   /** Repos that failed (e.g., private, deleted, rate-limited). Surfaces in the UI. */
   reposFailed: string[];
-  /** YYYY-MM-DD of the most recent ship day, or null if no commits in window. */
+  /** YYYY-MM-DD of the most recent ship day in the full window, or null if no commits. */
   lastShipped: string | null;
   /** Days between today and the last ship day. 0 = shipped today, 1 = yesterday, etc. */
   daysSinceLastShip: number | null;
+  /** True when streak=0 but there's recent weekly activity — the "forgot to push?" hint. */
+  forgotToPushHint: boolean;
 }
 
 /**
  * Return the local-date key (YYYY-MM-DD) for a given timestamp.
  * Uses the device's timezone.
  */
+const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']; // Sunday=0, per JS Date.getDay()
+
+/**
+ * Number of days the streak survives without a new ship. With grace=2:
+ *   - Last ship today    → streak alive (0 grace used)
+ *   - Last ship 1 day ago → streak alive (1 grace used)
+ *   - Last ship 2 days ago → streak alive (2 grace used, limit)
+ *   - Last ship 3+ days ago → streak broken (over the limit)
+ *
+ * 2 was chosen as a balance: forgiving enough that one missed day
+ * (sick, busy, weekend) doesn't kill the run, strict enough that a
+ * week-long break does. v2.0 could make this configurable.
+ */
+export const STREAK_GRACE_DAYS = 2;
+
 function localDateKey(isoString: string, timeZone: string): string {
   // Intl.DateTimeFormat is the most reliable way to extract YYYY-MM-DD
   // in a specific timezone. `en-CA` gives us ISO order.
@@ -176,26 +193,44 @@ export async function loadStreak(
     }
   }
 
-  // Compute streak: walk back from today (or the most recent ship day
-  // if today is empty) while commits > 0.
-  let streak = 0;
-  let shippedToday = (byDate.get(todayK) ?? 0) > 0;
-  let cursor = shippedToday ? todayK : addDays(todayK, -1);
-  while ((byDate.get(cursor) ?? 0) > 0) {
-    streak++;
-    cursor = addDays(cursor, -1);
+  // Compute streak with a grace period (STREAK_GRACE_DAYS).
+  //
+  // Algorithm:
+  //   1. Walk back from today up to STREAK_GRACE_DAYS + 1 days looking for
+  //      a ship day. If we find one within the grace window, that's our
+  //      "anchor" — the streak end. If not, the streak is dead (0).
+  //   2. From the anchor, walk back while commits > 0, counting the
+  //      streak. (No grace within the streak itself — once you start a
+  //      run, every day must have a ship.)
+  let lastShipDay: string | null = null;
+  for (let i = 0; i <= STREAK_GRACE_DAYS; i++) {
+    const day = addDays(todayK, -i);
+    if ((byDate.get(day) ?? 0) > 0) {
+      lastShipDay = day;
+      break;
+    }
   }
 
-  // Find the most recent ship day and how many days ago it was. The cursor
-  // after the streak loop above is the first day with 0 commits BEFORE the
-  // streak — so the last ship day is cursor + 1.
+  let streak = 0;
+  if (lastShipDay !== null) {
+    let cursor = lastShipDay;
+    while ((byDate.get(cursor) ?? 0) > 0) {
+      streak++;
+      cursor = addDays(cursor, -1);
+    }
+  }
+
+  const shippedToday = (byDate.get(todayK) ?? 0) > 0;
+
+  // Find the most recent ship day in the FULL window (not just the grace
+  // window), so we can show "last shipped N days ago" even when the streak
+  // is broken. Search up to 365 days back.
   let lastShipped: string | null = null;
-  let daysSinceLastShip: number | null = null;
-  if (streak > 0) {
-    lastShipped = addDays(cursor, 1);
+  if (lastShipDay !== null) {
+    lastShipped = lastShipDay;
   } else {
-    // No streak. Find the most recent day with commits (search the window).
-    // Walk back from today until we find one.
+    // Streak is dead. Find the most recent day with commits anywhere in
+    // the window. Walk back from today.
     let probe = todayK;
     for (let i = 0; i < 365; i++) {
       if ((byDate.get(probe) ?? 0) > 0) {
@@ -205,8 +240,9 @@ export async function loadStreak(
       probe = addDays(probe, -1);
     }
   }
+
+  let daysSinceLastShip: number | null = null;
   if (lastShipped !== null) {
-    // Count days from lastShipped to todayK by walking forward.
     let count = 0;
     let walker = lastShipped;
     while (walker !== todayK) {
@@ -214,13 +250,6 @@ export async function loadStreak(
       count++;
     }
     daysSinceLastShip = count;
-  }
-
-  // Dev log: print the byDate map and the streak so we can diagnose
-  // "I have N commits but streak=0?" reports in the future.
-  if (__DEV__) {
-    console.log('[streak] byDate:', Object.fromEntries(byDate));
-    console.log('[streak] todayK:', todayK, 'lastShipped:', lastShipped, 'streak:', streak, 'shippedToday:', shippedToday);
   }
 
   // Compute weekly: 7 days ending today, oldest first
@@ -232,6 +261,37 @@ export async function loadStreak(
 
   const totalCommits = Array.from(byDate.values()).reduce((a, b) => a + b, 0);
 
+  // "Forgot to push?" hint: triggered when the user has NO active streak
+  // (last ship > STREAK_GRACE_DAYS ago, OR never) BUT the weekly chart
+  // shows recent activity. This catches the "I committed locally but
+  // forgot to push" case — they have evidence of activity but the streak
+  // is broken. v1.1 nudge; never accusatory.
+  const weeklyHasActivity = weekly.some((d) => d.count > 0);
+  const forgotToPushHint =
+    streak === 0 &&
+    weeklyHasActivity &&
+    daysSinceLastShip !== null &&
+    daysSinceLastShip >= 1;
+
+  // Dev log: print the byDate map and the streak so we can diagnose
+  // "why is my streak 0?" reports in the future.
+  if (__DEV__) {
+    console.log('[streak] byDate:', Object.fromEntries(byDate));
+    console.log(
+      '[streak] todayK:',
+      todayK,
+      'lastShipped:',
+      lastShipped,
+      'streak:',
+      streak,
+      'shippedToday:',
+      shippedToday,
+      'graceDays:',
+      STREAK_GRACE_DAYS,
+    );
+    console.log('[streak] forgotToPushHint:', forgotToPushHint);
+  }
+
   return {
     streak,
     shippedToday,
@@ -242,6 +302,7 @@ export async function loadStreak(
     reposFailed,
     lastShipped,
     daysSinceLastShip,
+    forgotToPushHint,
   };
 }
 
@@ -278,11 +339,18 @@ export function formatStreakLine(
 
 /**
  * Format the secondary line (call-to-action under the streak).
+ *
+ * If the `forgotToPush` flag is set, we use the friendly nudge copy.
+ * Otherwise the standard subline based on streak state.
  */
 export function formatStreakSubline(
   streak: number,
   shippedToday: boolean,
+  forgotToPush: boolean = false,
 ): string {
+  if (forgotToPush) {
+    return "Did you forget to push? 🫠  We count ships when they hit GitHub.";
+  }
   if (streak >= 1 && shippedToday) return "You shipped today. Keep the run alive.";
   if (streak >= 1 && !shippedToday) return "Ship something today to keep the streak alive.";
   return "Even a README counts.";

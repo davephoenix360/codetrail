@@ -75,10 +75,10 @@ export function StreakSection({ state, noTrackedRepos }: Props) {
   }
 
   // Ready
-  const { streak, shippedToday, weekly, daysSinceLastShip, totalCommits } = state.data;
+  const { streak, shippedToday, weekly, daysSinceLastShip, forgotToPushHint } = state.data;
   const totalThisWeek = weekly.reduce((sum, d) => sum + d.count, 0);
   const headline = formatStreakLine(streak, shippedToday, daysSinceLastShip);
-  const subline = formatStreakSubline(streak, shippedToday);
+  const subline = formatStreakSubline(streak, shippedToday, forgotToPushHint);
 
   return (
     <View style={styles.card}>
