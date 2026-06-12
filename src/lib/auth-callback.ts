@@ -49,7 +49,7 @@ import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 
 import { auth, db } from './firebase';
 import { getCurrentUser, GitHubApiError, type GitHubUser } from './github-api';
-import { linkGithubAccount, lookupGithubAccount } from './firebase-accounts';
+import { linkGithubAccount, lookupGithubAccount, refreshLinkedAccountToken } from './firebase-accounts';
 
 const GITHUB_OAUTH_CLIENT_ID = process.env.EXPO_PUBLIC_GITHUB_OAUTH_CLIENT_ID ?? '';
 const EXCHANGE_URL = process.env.EXPO_PUBLIC_CODETRAIL_EXCHANGE_URL ?? '';
@@ -354,6 +354,10 @@ export async function processAuthCallback(
       // (from the original sign-in) might be revoked, expired by app config
       // change, or stale. Storing the fresh one keeps `useAuth().githubAccessToken`
       // working without forcing the user to re-link.
+      //
+      // We use a separate `refreshLinkedAccountToken` (not `linkGithubAccount`)
+      // so we don't accidentally clobber `isPrimary: true` on the user's
+      // primary account, and don't touch the public lookup.
       try {
         await Promise.all([
           setDoc(
@@ -361,11 +365,7 @@ export async function processAuthCallback(
             { lastSeenAt: serverTimestamp() },
             { merge: true },
           ),
-          // linkGithubAccount with isFirstForUser=false updates the
-          // linkedAccounts doc (overwrites the stored accessToken, login,
-          // avatarUrl) and the public lookup (login, avatarUrl). It does
-          // NOT touch primaryGithubId, so the existing primary is preserved.
-          linkGithubAccount(newUid, profile, accessToken, { isFirstForUser: false }),
+          refreshLinkedAccountToken(newUid, profile, accessToken),
         ]);
       } catch (e) {
         // Non-fatal — the user is signed in, we just couldn't refresh the

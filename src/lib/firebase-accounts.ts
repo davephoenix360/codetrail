@@ -157,6 +157,38 @@ export async function linkGithubAccount(
 // ---------------------------------------------------------------------------
 
 /**
+ * Refresh the stored GitHub access token for an already-linked account.
+ *
+ * Called on re-auth (Case C in auth-callback.ts). The fresh access token
+ * from the OAuth exchange is guaranteed valid (we just used it to sign in
+ * via `signInWithCredential`), so storing it keeps `useAuth().githubAccessToken`
+ * working without forcing the user to re-link.
+ *
+ * DIFFERENCE FROM `linkGithubAccount`:
+ * - `linkGithubAccount` is for ADDING a new link. It writes `isPrimary`
+ *   (clobbering it on merge), and writes the public lookup.
+ * - `refreshLinkedAccountToken` is for REFRESHING an existing link. It
+ *   ONLY updates the accessToken, login, and avatarUrl. It never touches
+ *   `isPrimary`, `primaryGithubId`, or the public lookup — those are
+ *   managed by `setPrimaryAccount` and `linkGithubAccount` respectively.
+ *
+ * If the doc doesn't exist (e.g., the lookup is stale), this throws —
+ * the caller should fall back to `linkGithubAccount`.
+ */
+export async function refreshLinkedAccountToken(
+  uid: string,
+  profile: GitHubUser,
+  accessToken: string,
+): Promise<void> {
+  await updateDoc(linkedAccountDoc(uid, profile.id), stripNulls({
+    githubId: profile.id,
+    login: profile.login,
+    accessToken,
+    avatarUrl: profile.avatarUrl,
+  }) as Record<string, unknown>);
+}
+
+/**
  * Set an existing linked account as the primary.
  *
  * Atomically:
