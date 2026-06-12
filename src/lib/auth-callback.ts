@@ -236,6 +236,17 @@ export async function processAuthCallback(
           githubAccessToken: accessToken,
           ...(isNewUser ? { createdAt: serverTimestamp() } : {}),
           lastSeenAt: serverTimestamp(),
+          // Streak cache: new users start at 0. Returning users keep
+          // whatever was stored (or get the defaults below if they
+          // predate the streak fields and sign in fresh).
+          ...(isNewUser
+            ? {
+                streak: 0,
+                lastShippedAt: null,
+                streakData: null,
+                streakUpdatedAt: null,
+              }
+            : {}),
         },
         { merge: true },
       );

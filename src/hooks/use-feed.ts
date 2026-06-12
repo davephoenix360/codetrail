@@ -44,7 +44,15 @@ export function useFeed({ uid, accessToken, friends }: UseFeedInput): UseFeedRes
 
   const refresh = useCallback(async () => {
     if (!uid || !accessToken) return;
-    if (friends.length === 0) {
+
+    // Filter to friends who are on CodeTrail. Friends off the platform
+    // are still shown in the friend list (so the user can manage them)
+    // but we don't fetch their commit data — they probably aren't
+    // tracking the same way, and the user's feed is more useful if it
+    // focuses on people who are also on the app.
+    const friendsOnApp = friends.filter((f) => f.isOnCodeTrail);
+
+    if (friendsOnApp.length === 0) {
       setEntries([]);
       setStale(false);
       setState('empty');
@@ -54,12 +62,16 @@ export function useFeed({ uid, accessToken, friends }: UseFeedInput): UseFeedRes
     const myFetchId = ++fetchIdRef.current;
     setError(null);
     if (__DEV__) {
-      console.log('[useFeed] refreshing', { friendsCount: friends.length, fetchId: myFetchId });
+      console.log('[useFeed] refreshing', {
+        friendsTotal: friends.length,
+        friendsOnApp: friendsOnApp.length,
+        fetchId: myFetchId,
+      });
     }
     try {
       const response: FeedResponse = await getFriendFeed(
         accessToken,
-        friends.map((f) => ({
+        friendsOnApp.map((f) => ({
           githubId: f.githubId,
           login: f.login,
           avatarUrl: f.avatarUrl,

@@ -1,24 +1,30 @@
 /**
- * useStreak — load and cache the user's commit activity.
+ * useStreak — load the user's commit activity from cache or GitHub.
  *
- * Auto-fetches on mount and whenever the inputs change (user, repos,
- * token). Exposes a `refresh` function for pull-to-refresh on /repos.
+ * Strategy:
+ *   1. On mount, check the stored `streakData` on the user profile.
+ *      - If present AND recent (< 1 hour): return it directly. No
+ *        API call. The dashboard renders instantly.
+ *      - If missing OR stale: call loadStreak() (GitHub API), then
+ *        write the result back via `onUpdate` so the next mount is
+ *        fast.
+ *   2. If repos.length === 0: short-circuit to 'idle'. The user
+ *      hasn't tracked anything yet; no streak to compute.
+ *   3. `refresh()` always re-computes from GitHub (used by pull-to-
+ *      refresh on /repos).
  *
- * Does NOT auto-poll. The /repos screen will refresh on each visit;
- * within a session, the cached result is reused until the user pulls
- * down or signs out.
- *
- * Why no auto-poll: GitHub's rate limit is 5,000 req/hr per user. With
- * 5 tracked repos, each refresh is 5 calls. A 5-minute polling
- * interval = 60 calls/hr, well under. But polling drains battery on
- * the user's phone — better to fetch on view. v2.0 will add a
- * background refresh on app foreground.
+ * For NEW users, the stored streak is 0 / streakData is null. The
+ * auth-callback initializes these on sign-up so the dashboard
+ * renders "🔥 0" instantly with no API call.
  */
 import { useCallback, useEffect, useState } from 'react';
 
 import { GitHubApiError } from '@/lib/github-api';
 import { loadStreak, type StreakResult } from '@/lib/streak';
 import type { TrackedRepo } from '@/lib/firebase-repos';
+import type { StreakSnapshot } from '@/lib/account-types';
+
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 export interface UseStreakArgs {
   /** GitHub OAuth access token. Null if not loaded yet. */
@@ -27,15 +33,77 @@ export interface UseStreakArgs {
   login: string | null;
   /** Tracked repos. Empty array if not loaded yet. */
   repos: TrackedRepo[];
+  /** Cached streak result from the user profile. Undefined if not yet loaded. */
+  storedStreakData: StreakSnapshot | null | undefined;
+  /** When `storedStreakData` was last refreshed (ms epoch). */
+  storedStreakUpdatedAt: number | null | undefined;
+  /** Called with the fresh result after a successful loadStreak() so the
+   *  parent can write it back to Firestore. */
+  onUpdate?: (snapshot: StreakSnapshot) => void;
 }
 
 export type StreakState =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'ready'; data: StreakResult }
+  | { status: 'ready'; data: StreakResult; fromCache: boolean }
   | { status: 'error'; message: string; partialData?: StreakResult };
 
-export function useStreak({ accessToken, login, repos }: UseStreakArgs): {
+/**
+ * Convert a YYYY-MM-DD date string to a full ISO timestamp at UTC midnight.
+ * Used when caching: the in-memory result uses just the date key, but the
+ * stored snapshot keeps the full ISO so we can compute `daysSinceLastShip`
+ * on read-back without timezone ambiguity.
+ */
+function dateKeyToIso(dateKey: string): string {
+  return `${dateKey}T00:00:00.000Z`;
+}
+
+function isoToDateKey(iso: string): string {
+  return iso.slice(0, 10);
+}
+
+/** Convert a StreakSnapshot (cached in Firestore) back to a StreakResult. */
+function snapshotToResult(snap: StreakSnapshot): StreakResult {
+  return {
+    streak: snap.streak,
+    shippedToday: snap.shippedToday,
+    weekly: snap.weekly.map((d) => ({ date: d.date, count: d.count })),
+    totalCommits: snap.totalCommits,
+    generatedAt: Date.now(),
+    reposScanned: 0, // unknown from cache
+    reposFailed: [],
+    lastShipped: snap.lastShippedAt ? isoToDateKey(snap.lastShippedAt) : null,
+    daysSinceLastShip: snap.daysSinceLastShip,
+    forgotToPushHint: snap.forgotToPushHint,
+  };
+}
+
+/** Convert a StreakResult to a StreakSnapshot for Firestore storage. */
+function resultToSnapshot(result: StreakResult): StreakSnapshot {
+  return {
+    streak: result.streak,
+    shippedToday: result.shippedToday,
+    totalCommits: result.totalCommits,
+    lastShippedAt: result.lastShipped ? dateKeyToIso(result.lastShipped) : null,
+    daysSinceLastShip: result.daysSinceLastShip,
+    forgotToPushHint: result.forgotToPushHint,
+    weekly: result.weekly.map((d) => ({ date: d.date, count: d.count })),
+  };
+}
+
+function isCacheFresh(updatedAt: number | null | undefined): boolean {
+  if (!updatedAt) return false;
+  return Date.now() - updatedAt < CACHE_TTL_MS;
+}
+
+export function useStreak({
+  accessToken,
+  login,
+  repos,
+  storedStreakData,
+  storedStreakUpdatedAt,
+  onUpdate,
+}: UseStreakArgs): {
   state: StreakState;
   refresh: () => void;
 } {
@@ -48,8 +116,8 @@ export function useStreak({ accessToken, login, repos }: UseStreakArgs): {
   }, []);
 
   useEffect(() => {
-    // Gate: we need all three inputs to make a request.
-    if (!accessToken || !login) {
+    // Gate: we need login at minimum (to filter the author on GitHub).
+    if (!login) {
       setState({ status: 'idle' });
       return;
     }
@@ -60,7 +128,30 @@ export function useStreak({ accessToken, login, repos }: UseStreakArgs): {
       return;
     }
 
-    // AbortController to cancel on unmount or inputs change.
+    // CACHE PATH: if we have a recent snapshot, use it directly. No
+    // API call. The dashboard renders instantly. This is the main
+    // optimization the new storage layer enables.
+    if (storedStreakData && isCacheFresh(storedStreakUpdatedAt)) {
+      if (__DEV__) {
+        console.log('[useStreak] cache hit', {
+          streak: storedStreakData.streak,
+          updatedAt: storedStreakUpdatedAt,
+        });
+      }
+      setState({
+        status: 'ready',
+        data: snapshotToResult(storedStreakData),
+        fromCache: true,
+      });
+      return;
+    }
+
+    // COMPUTE PATH: cache missing or stale. Hit GitHub.
+    // (We still need an accessToken for the GitHub API call.)
+    if (!accessToken) {
+      setState({ status: 'idle' });
+      return;
+    }
     const ac = new AbortController();
     setState({ status: 'loading' });
 
@@ -68,7 +159,10 @@ export function useStreak({ accessToken, login, repos }: UseStreakArgs): {
       try {
         const data = await loadStreak(accessToken, login, repos, { signal: ac.signal });
         if (ac.signal.aborted) return;
-        setState({ status: 'ready', data });
+        setState({ status: 'ready', data, fromCache: false });
+        if (onUpdate) {
+          onUpdate(resultToSnapshot(data));
+        }
       } catch (e) {
         if (ac.signal.aborted) return;
         const message =
@@ -83,7 +177,7 @@ export function useStreak({ accessToken, login, repos }: UseStreakArgs): {
     })();
 
     return () => ac.abort();
-  }, [accessToken, login, repos, refreshTick]);
+  }, [accessToken, login, repos, refreshTick, storedStreakData, storedStreakUpdatedAt, onUpdate]);
 
   return { state, refresh };
 }

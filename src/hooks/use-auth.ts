@@ -19,7 +19,7 @@ import { User, onAuthStateChanged, signOut as fbSignOut } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 
 import { auth, db } from '@/lib/firebase';
-import type { UserProfile } from '@/lib/account-types';
+import { UserProfile, StreakSnapshot } from '@/lib/account-types';
 
 const LOADING_TIMEOUT_MS = 10_000;
 
@@ -157,6 +157,36 @@ export function useAuth() {
     }
   };
 
+  /**
+   * Write a fresh streak snapshot back to the user profile. Called by
+   * useStreak after a successful loadStreak() so the next /repos mount
+   * can render the dashboard instantly from cache.
+   *
+   * Best-effort: a failed write doesn't surface to the user. The next
+   * /repos visit will just re-compute.
+   */
+  const updateStreak = async (snapshot: StreakSnapshot): Promise<void> => {
+    if (!user) return;
+    try {
+      await setDoc(
+        doc(db, 'users', user.uid),
+        {
+          streak: snapshot.streak,
+          lastShippedAt: snapshot.lastShippedAt
+            ? new Date(snapshot.lastShippedAt).getTime()
+            : null,
+          streakData: snapshot,
+          streakUpdatedAt: Date.now(),
+        },
+        { merge: true },
+      );
+    } catch (e) {
+      if (__DEV__) {
+        console.warn('[useAuth] updateStreak failed:', e);
+      }
+    }
+  };
+
   return {
     // Core auth
     user,
@@ -177,5 +207,6 @@ export function useAuth() {
     reloadProfile,
     touchLastSeen,
     signOut: () => fbSignOut(auth),
+    updateStreak,
   };
 }

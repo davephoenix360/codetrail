@@ -25,6 +25,7 @@ type State =
   | { status: 'loading' }
   | { status: 'ready'; entries: FeedEntryT[]; stale: boolean }
   | { status: 'empty' }
+  | { status: 'not-on-app' }
   | { status: 'zero-friends' }
   | { status: 'error'; message: string };
 
@@ -60,6 +61,19 @@ export function FeedSection({ state, onRefresh, onRetry }: Props) {
         >
           <ThemedText type="smallBold">Add a friend</ThemedText>
         </Pressable>
+      </View>
+    );
+  }
+
+  if (state.status === 'not-on-app') {
+    return (
+      <View style={styles.card}>
+        <ThemedText type="default" style={styles.heading}>
+          Your friends' ships
+        </ThemedText>
+        <ThemedText type="default" style={styles.muted}>
+          None of your friends are on CodeTrail yet. Invite them so you can see their streaks too.
+        </ThemedText>
       </View>
     );
   }

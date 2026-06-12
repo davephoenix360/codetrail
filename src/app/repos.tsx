@@ -44,7 +44,7 @@ import { Spacing } from '@/constants/theme';
 type LoadState = 'loading' | 'ready' | 'error';
 
 export default function ReposScreen() {
-  const { user, loading, isSignedIn, signOut, githubAccessToken, profileLoaded, userProfile } = useAuth();
+  const { user, loading, isSignedIn, signOut, githubAccessToken, profileLoaded, userProfile, updateStreak } = useAuth();
 
   // Defensive: if a signed-out user lands here, bounce back to /.
   useEffect(() => {
@@ -65,11 +65,20 @@ export default function ReposScreen() {
   const [pickerState, setPickerState] = useState<LoadState>('loading');
   const [pickerError, setPickerError] = useState<string | null>(null);
 
-  // Streak dashboard.
+  // Streak dashboard. Uses the stored streak cache (on the user profile)
+  // if it's recent (< 1 hour) — instant render, no API call. Otherwise
+  // computes via loadStreak and writes back to Firestore for next time.
   const { state: streakState, refresh: refreshStreak } = useStreak({
     accessToken: githubAccessToken,
     login: userProfile?.login ?? null,
     repos: tracked,
+    storedStreakData: userProfile?.streakData ?? null,
+    storedStreakUpdatedAt: userProfile?.streakUpdatedAt ?? null,
+    onUpdate: (snapshot) => {
+      // Fire-and-forget write to Firestore. The hook continues
+      // regardless; next mount will pick up the cached value.
+      void updateStreak(snapshot);
+    },
   });
 
   // Friends + activity feed (Phase 3).
@@ -81,9 +90,15 @@ export default function ReposScreen() {
   });
 
   // Map useFeed's status to FeedSection's State shape.
+  const friendsOnApp = friends.filter((f) => f.isOnCodeTrail).length;
   const feedSectionState = (() => {
     if (friends.length === 0) {
       return { status: 'zero-friends' as const };
+    }
+    if (friendsOnApp === 0) {
+      // Have friends, but none are on CodeTrail — skip the feed fetch
+      // entirely. New copy: invite them to see their streaks.
+      return { status: 'not-on-app' as const };
     }
     if (feedState === 'loading' && feedEntries.length === 0) {
       return { status: 'loading' as const };
