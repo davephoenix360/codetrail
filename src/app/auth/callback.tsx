@@ -12,9 +12,8 @@
  * `processAuthCallback`, which dedupes via a module-level set.
  *
  * After processing, we navigate based on the result kind:
- *   - newUser / reAuth: → /repos (the main app)
- *   - linked:           → /settings/accounts (Settings screen, after a link)
- *   - error:            → / (sign-in screen) and surface the error message
+ *   - newUser / returning: → /repos (the main app)
+ *   - error:               → / (sign-in screen) and surface the error message
  */
 import { useEffect, useRef } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
@@ -54,11 +53,8 @@ export default function AuthCallbackRoute() {
 
       switch (result.kind) {
         case 'newUser':
-        case 'reAuth':
+        case 'returning':
           router.replace('/repos');
-          return;
-        case 'linked':
-          router.replace('/settings/accounts');
           return;
         case 'error':
           // Surface the error to the user — silent bounces are debug hell.

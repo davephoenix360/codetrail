@@ -3,61 +3,30 @@ rules_version = '2';
 // CodeTrail — Firestore security rules
 //
 // Data model:
-//   users/{uid}                                       — user profile
-//   users/{uid}/trackedRepos/{repoId}                 — tracked repos
-//   users/{uid}/linkedAccounts/{githubId}             — GitHub accounts linked to this user
-//   githubAccounts/{githubId}                         — PUBLIC lookup index for sign-in
+//   users/{uid}                              — user profile (single GitHub account)
+//   users/{uid}/trackedRepos/{repoId}        — repos the user is tracking for streak
 //
-// The githubAccounts collection is public-read by design — see BRIEF.md
-// decision log (2026-06-11) and skill `oauth-with-linked-accounts`.
-// The tradeoff is a mild enumeration risk (GitHub ID → UID); we'll move
-// the lookup to the Cloudflare Worker with Firebase Admin SDK in v2.0.
+// All access is denied by default. A user can only read/write their own
+// documents. There is no public read, no cross-user access, no admin SDK
+// in the client.
 //
-// To deploy:
-//   firebase deploy --only firestore:rules    (after `firebase login`)
-// or via the Firebase console → Firestore → Rules.
+// The access token lives on the user profile doc itself
+// (`users/{uid}.githubAccessToken`). When we add multi-account (deferred to
+// v2.0), the token will move to a per-account subcollection.
+//
+// Tracked repos use GitHub numeric `repoId` as the doc ID (NOT `fullName` —
+// see skill `firestore-doc-id-constraints`).
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ---- User data (owner-only) ----
+    // User profile: only the owning user can read or write.
     match /users/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
 
-      // Tracked repos: a sub-collection. Document IDs are GitHub numeric
-      // repo IDs (NOT fullName — see skill `firestore-doc-id-constraints`).
+      // Tracked repos: a sub-collection of the user.
       match /trackedRepos/{repoId} {
         allow read, write: if request.auth != null && request.auth.uid == uid;
       }
-
-      // Linked GitHub accounts: a sub-collection. Document IDs are GitHub
-      // numeric user IDs. One doc per linked GitHub account.
-      match /linkedAccounts/{githubId} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
-      }
-    }
-
-    // ---- Public lookup index (for sign-in flow) ----
-    //
-    // WHY PUBLIC READ: The sign-in flow needs to check "is this GitHub
-    // account already linked to an existing CodeTrail user" BEFORE the
-    // user has authenticated. So this collection must be readable by
-    // unauthenticated callers.
-    //
-    // SECURITY: The data being exposed is the linkage between a public
-    // GitHub ID and a Firebase UID. The GitHub username is already public
-    // on github.com. Enumeration of the index requires guessing GitHub
-    // IDs (64-bit, not sequential), so the practical risk is low.
-    //
-    // WRITE RULES: Only the OWNING user can create / modify / delete the
-    // lookup doc, AND the `uid` field in the doc must match the
-    // caller's UID. This prevents a user from creating a lookup doc
-    // that points to someone else's UID.
-    match /githubAccounts/{githubId} {
-      allow read: if true;
-      allow create: if request.auth != null
-                    && request.auth.uid == request.resource.data.uid;
-      allow update, delete: if request.auth != null
-                            && request.auth.uid == resource.data.uid;
     }
 
     // ---- Default deny ----

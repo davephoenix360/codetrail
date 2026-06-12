@@ -33,7 +33,7 @@ import { Spacing } from '@/constants/theme';
 type LoadState = 'loading' | 'ready' | 'error';
 
 export default function ReposScreen() {
-  const { user, loading, isSignedIn, signOut, githubAccessToken, accountsLoaded } = useAuth();
+  const { user, loading, isSignedIn, signOut, githubAccessToken, profileLoaded } = useAuth();
 
   // Defensive: if a signed-out user lands here, bounce back to /.
   useEffect(() => {
@@ -173,7 +173,7 @@ export default function ReposScreen() {
   );
 
   // ---- Render: loading spinner until both auth + GitHub token are ready ----
-  if (loading || !accountsLoaded) {
+  if (loading || !profileLoaded) {
     return (
       <ThemedView style={styles.full}>
         <ActivityIndicator size="large" />
@@ -195,16 +195,6 @@ export default function ReposScreen() {
             </ThemedText>
           </View>
           <View style={styles.headerActions}>
-            <Pressable
-              onPress={() => router.push('/settings/accounts')}
-              accessibilityRole="button"
-              accessibilityLabel="Settings"
-              style={styles.headerButton}
-            >
-              <ThemedText type="small" style={styles.muted}>
-                Settings
-              </ThemedText>
-            </Pressable>
             <Pressable
               onPress={signOut}
               accessibilityRole="button"

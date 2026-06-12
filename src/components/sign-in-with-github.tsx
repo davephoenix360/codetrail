@@ -51,7 +51,6 @@ import {
   AUTH_CONSTANTS,
   generateAndStoreState,
   processAuthCallback,
-  setAuthIntent,
 } from '@/lib/auth-callback';
 
 const { GITHUB_OAUTH_CLIENT_ID, EXCHANGE_URL, REDIRECT_URI } = AUTH_CONSTANTS;
@@ -119,9 +118,6 @@ export function SignInWithGitHub() {
     // Generate CSRF state — persisted in AsyncStorage so it survives
     // cold-start callbacks (where the original component tree is gone).
     const state = await generateAndStoreState();
-    // Mark the intent so the auth callback knows to do a sign-in (vs
-    // a "link another account" which is set by the Settings screen).
-    await setAuthIntent('signin');
 
     // 1. Build the GitHub OAuth URL
     const authUrl = new URL('https://github.com/login/oauth/authorize');
