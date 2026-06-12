@@ -3,14 +3,17 @@
  *
  * Endpoints:
  *   POST /                — Exchange a GitHub OAuth code for an access token.
- *                          The access token is returned to the client, which
- *                          uses it with signInWithCredential to sign in to
- *                          Firebase Auth.
+ *                            The access token is returned to the client, which
+ *                            uses it with signInWithCredential to sign in to
+ *                            Firebase Auth.
  *   POST /user            — Get the authenticated GitHub user's profile
- *                          (login, name, avatar, bio, public repo count,
- *                          follower/following counts).
+ *                            (login, name, avatar, bio, public repo count,
+ *                            follower/following counts).
  *   POST /user/repos      — List the authenticated user's public repos
- *                          (sorted by most recently updated, max 100).
+ *                            (sorted by most recently updated, max 100).
+ *   POST /repos/commits   — List a repo's commits by author since a date.
+ *                            Returns trimmed { sha, date } array. Used by
+ *                            the streak computation in lib/streak.ts.
  *
  * Secrets (set via `wrangler secret put`):
  *   GITHUB_OAUTH_CLIENT_ID       — OAuth app's public client_id
@@ -251,7 +254,54 @@ async function handleGetCurrentUser(
   });
 }
 
-/** Shape we trim each repo down to (saves bandwidth; app doesn't need the full body). */
+/**
+ * Trimmed commit shape we return. We only need the date for the streak
+ * computation; the SHA is for debugging if GitHub ever returns a weird
+ * commit (e.g., a co-authored commit that should count but doesn't).
+ */
+interface GitHubCommitDate {
+  sha: string;
+  date: string; // ISO 8601 from commit.author.date (or commit.committer.date as fallback)
+}
+
+/**
+ * List a repo's commits authored by the given user, since the given date.
+ *
+ * We pass `author={login}` so GitHub filters server-side. This returns
+ * the user's commits only — no co-authored noise.
+ *
+ * `per_page=100` is the GitHub max. If a user has more than 100 commits
+ * in the window, we get the most recent 100 (GitHub returns them
+ * newest-first). For our streak window (30 days), this is plenty.
+ */
+async function handleListRepoCommits(
+  body: {
+    accessToken: string;
+    owner: string;
+    repo: string;
+    author: string;
+    since: string; // ISO 8601
+  },
+): Promise<Response> {
+  const path = `/repos/${encodeURIComponent(body.owner)}/${encodeURIComponent(body.repo)}/commits?author=${encodeURIComponent(body.author)}&since=${encodeURIComponent(body.since)}&per_page=100`;
+  const data = await callGitHub<Array<{
+    sha: string;
+    commit: { author: { date: string } | null; committer: { date: string } | null };
+  }>>(body.accessToken, path);
+
+  // Fall back to committer date if author date is null (rare; happens for
+  // commits authored by a deleted GitHub user).
+  const commits: GitHubCommitDate[] = data.map((c) => ({
+    sha: c.sha,
+    date: c.commit.author?.date ?? c.commit.committer?.date ?? '',
+  })).filter((c) => c.date !== '');
+
+  return jsonResponse(commits);
+}
+
+/**
+ * Shape we trim each repo down to (saves bandwidth; app doesn't need the full body).
+ */
 interface GitHubRepoRaw {
   id: number;
   name: string;
@@ -364,6 +414,27 @@ export default {
           return jsonResponse({ error: accessToken.error }, 400);
         }
         return await handleListMyRepos({ accessToken: accessToken.value });
+      }
+
+      // POST /repos/commits — list a repo's commits by author since a date
+      if (path === '/repos/commits') {
+        const accessToken = requireString(body, 'accessToken');
+        if (!accessToken.ok) return jsonResponse({ error: accessToken.error }, 400);
+        const owner = requireString(body, 'owner');
+        if (!owner.ok) return jsonResponse({ error: owner.error }, 400);
+        const repo = requireString(body, 'repo');
+        if (!repo.ok) return jsonResponse({ error: repo.error }, 400);
+        const author = requireString(body, 'author');
+        if (!author.ok) return jsonResponse({ error: author.error }, 400);
+        const since = requireString(body, 'since');
+        if (!since.ok) return jsonResponse({ error: since.error }, 400);
+        return await handleListRepoCommits({
+          accessToken: accessToken.value,
+          owner: owner.value,
+          repo: repo.value,
+          author: author.value,
+          since: since.value,
+        });
       }
 
       return jsonResponse({ error: `Unknown path: ${path}` }, 404);

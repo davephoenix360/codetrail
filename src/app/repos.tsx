@@ -5,6 +5,9 @@
  * a picker to add or remove repos. The picker fetches the user's public
  * GitHub repos through the Cloudflare Worker proxy.
  *
+ * Above the list: a streak dashboard (lib/streak.ts) showing the user's
+ * current streak and weekly commit activity, with hype-man framing.
+ *
  * Hype-man voice throughout: every empty state, every error, every label.
  * See BRIEF.md §"Voice & tone" for the full checklist.
  */
@@ -15,6 +18,7 @@ import {
   FlatList,
   Modal,
   Pressable,
+  RefreshControl,
   StyleSheet,
   View,
 } from 'react-native';
@@ -22,18 +26,20 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
 import { RepoPicker } from '@/components/repo-picker';
+import { StreakSection } from '@/components/streak-section';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/hooks/use-auth';
+import { useStreak } from '@/hooks/use-streak';
 import { listTrackedRepos, trackRepo, untrackRepo } from '@/lib/firebase-repos';
-import { GitHubApiError, listMyRepos, type GitHubRepo } from '@/lib/github-api';
 import type { TrackedRepo } from '@/lib/firebase-repos';
+import { GitHubApiError, listMyRepos, type GitHubRepo } from '@/lib/github-api';
 import { Spacing } from '@/constants/theme';
 
 type LoadState = 'loading' | 'ready' | 'error';
 
 export default function ReposScreen() {
-  const { user, loading, isSignedIn, signOut, githubAccessToken, profileLoaded } = useAuth();
+  const { user, loading, isSignedIn, signOut, githubAccessToken, profileLoaded, userProfile } = useAuth();
 
   // Defensive: if a signed-out user lands here, bounce back to /.
   useEffect(() => {
@@ -46,12 +52,20 @@ export default function ReposScreen() {
   const [tracked, setTracked] = useState<TrackedRepo[]>([]);
   const [trackedState, setTrackedState] = useState<LoadState>('loading');
   const [trackedError, setTrackedError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Picker modal.
   const [pickerOpen, setPickerOpen] = useState(false);
   const [allRepos, setAllRepos] = useState<GitHubRepo[]>([]);
   const [pickerState, setPickerState] = useState<LoadState>('loading');
   const [pickerError, setPickerError] = useState<string | null>(null);
+
+  // Streak dashboard.
+  const { state: streakState, refresh: refreshStreak } = useStreak({
+    accessToken: githubAccessToken,
+    login: userProfile?.login ?? null,
+    repos: tracked,
+  });
 
   // Derived: set of full names of currently-tracked repos (for picker toggle state).
   const trackedFullNames = useMemo(
@@ -130,6 +144,8 @@ export default function ReposScreen() {
             },
           ];
         });
+        // Refresh the streak so the new repo's commits are included
+        refreshStreak();
       } catch (e) {
         // Surface the actual error so we can see if it's a permission
         // problem, network issue, or something else. v2.0 will use a toast.
@@ -146,7 +162,7 @@ export default function ReposScreen() {
         );
       }
     },
-    [user],
+    [user, refreshStreak],
   );
 
   const handleUntrack = useCallback(
@@ -155,6 +171,8 @@ export default function ReposScreen() {
       try {
         await untrackRepo(user.uid, repoId);
         setTracked((prev) => prev.filter((r) => r.repoId !== repoId));
+        // Refresh the streak so the untracked repo's commits drop off
+        refreshStreak();
       } catch (e) {
         const code =
           e && typeof e === 'object' && 'code' in e
@@ -169,8 +187,18 @@ export default function ReposScreen() {
         );
       }
     },
-    [user],
+    [user, refreshStreak],
   );
+
+  // ---- Pull-to-refresh: reload tracked repos AND the streak ----
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([reloadTracked(), Promise.resolve(refreshStreak())]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [reloadTracked, refreshStreak]);
 
   // ---- Render: loading spinner until both auth + GitHub token are ready ----
   if (loading || !profileLoaded) {
@@ -191,7 +219,7 @@ export default function ReposScreen() {
               You shipped.
             </ThemedText>
             <ThemedText type="small" style={styles.muted}>
-              Hi, {user?.displayName || user?.email}.
+              Hi, {user?.displayName || user?.email || userProfile?.login}.
             </ThemedText>
           </View>
           <View style={styles.headerActions}>
@@ -226,22 +254,39 @@ export default function ReposScreen() {
             </Pressable>
           </View>
         ) : tracked.length === 0 ? (
-          <View style={styles.center}>
-            <ThemedText type="subtitle" style={styles.emptyHeading}>
-              Pick your projects
-            </ThemedText>
-            <ThemedText type="default" style={[styles.muted, styles.spacedTop]}>
-              We will track your streak on the repos you choose. No judgment, just momentum.
-            </ThemedText>
-            <Pressable onPress={openPicker} style={[styles.button, styles.spacedTop]}>
-              <ThemedText type="smallBold">Browse your projects</ThemedText>
-            </Pressable>
-          </View>
+          <>
+            <StreakSection
+              state={streakState}
+              noTrackedRepos={true}
+            />
+            <View style={styles.center}>
+              <ThemedText type="subtitle" style={styles.emptyHeading}>
+                Pick your projects
+              </ThemedText>
+              <ThemedText type="default" style={[styles.muted, styles.spacedTop]}>
+                We will track your streak on the repos you choose. No judgment, just momentum.
+              </ThemedText>
+              <Pressable onPress={openPicker} style={[styles.button, styles.spacedTop]}>
+                <ThemedText type="smallBold">Browse your projects</ThemedText>
+              </Pressable>
+            </View>
+          </>
         ) : (
           <>
             <FlatList
               data={tracked}
               keyExtractor={(r) => r.repoFullName}
+              ListHeaderComponent={
+                <View style={styles.dashboardWrap}>
+                  <StreakSection
+                    state={streakState}
+                    noTrackedRepos={false}
+                  />
+                  <ThemedText type="default" style={[styles.muted, styles.spacedTop, styles.listHeader]}>
+                    Tracked projects
+                  </ThemedText>
+                </View>
+              }
               renderItem={({ item }) => (
                 <View style={styles.trackedRow}>
                   <ThemedText type="smallBold">{item.name}</ThemedText>
@@ -252,6 +297,13 @@ export default function ReposScreen() {
               )}
               ItemSeparatorComponent={() => <View style={styles.separator} />}
               contentContainerStyle={styles.listContent}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                  tintColor="#8b949e"
+                />
+              }
             />
             <Pressable
               onPress={openPicker}
@@ -342,9 +394,16 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: 1,
-    backgroundColor: 'rgba(0,0,0,0.06)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
   },
   listContent: {
     paddingBottom: Spacing.three,
+  },
+  dashboardWrap: {
+    marginBottom: Spacing.four,
+  },
+  listHeader: {
+    marginTop: Spacing.four,
+    marginBottom: Spacing.two,
   },
 });

@@ -115,3 +115,39 @@ export async function getCurrentUser(accessToken: string): Promise<GitHubUser> {
 export async function listMyRepos(accessToken: string): Promise<GitHubRepo[]> {
   return postToWorker<GitHubRepo[]>('/user/repos', { accessToken });
 }
+
+/**
+ * Trimmed commit shape returned by the worker. We only need the date
+ * (and the SHA for debugging). The worker returns up to 100 commits
+ * in the window, newest-first.
+ */
+export interface GitHubCommitDate {
+  sha: string;
+  date: string; // ISO 8601
+}
+
+/**
+ * List commits in a repo authored by the given user, since the given date.
+ *
+ * Used by lib/streak.ts to compute the user's commit activity. GitHub's
+ * `author` filter is server-side, so we don't get co-authored noise.
+ *
+ * `since` should be an ISO 8601 string. GitHub treats it as exclusive
+ * (commits AT that exact moment are not included). We pass an
+ * ISO-formatted "30 days ago midnight" for the streak window.
+ */
+export async function getRepoCommits(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  author: string,
+  since: string,
+): Promise<GitHubCommitDate[]> {
+  return postToWorker<GitHubCommitDate[]>('/repos/commits', {
+    accessToken,
+    owner,
+    repo,
+    author,
+    since,
+  });
+}
