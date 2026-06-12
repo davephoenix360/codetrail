@@ -173,3 +173,61 @@ export async function getRepoCommits(
     since,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Friends feed (Phase 3)
+// ---------------------------------------------------------------------------
+
+/** One feed entry returned by the worker's /friends/feed endpoint. */
+export interface FeedEntry {
+  friend: {
+    githubId: number;
+    login: string;
+    avatarUrl: string;
+    htmlUrl?: string;
+    isOnCodeTrail: boolean;
+    friendUid: string | null;
+  };
+  repo: {
+    fullName: string;
+    commitCount: number; // commits in the busiest repo
+    totalCommits: number; // total across all repos for this friend-day
+    latestSha: string;
+    latestMessage: string;
+  };
+  date: string; // YYYY-MM-DD (UTC for MVP)
+}
+
+export interface FeedResponse {
+  fetchedAt: string;
+  entries: FeedEntry[];
+  rateLimited: boolean;
+  failedFriends: number[];
+}
+
+/**
+ * Aggregate a friends list's recent commits into a feed.
+ *
+ * The worker fans out: for each friend, list their recently-pushed
+ * public repos, then fetch commits in each repo. Returns per-friend
+ * per-day entries (newest first).
+ */
+export async function getFriendFeed(
+  accessToken: string,
+  friends: Array<{
+    githubId: number;
+    login: string;
+    avatarUrl?: string;
+    htmlUrl?: string;
+    isOnCodeTrail?: boolean;
+    friendUid?: string | null;
+  }>,
+  options: { days?: number; maxFriends?: number } = {},
+): Promise<FeedResponse> {
+  return postToWorker<FeedResponse>('/friends/feed', {
+    accessToken,
+    friends,
+    ...(options.days !== undefined ? { days: options.days } : {}),
+    ...(options.maxFriends !== undefined ? { maxFriends: options.maxFriends } : {}),
+  });
+}

@@ -28,9 +28,12 @@ import { router } from 'expo-router';
 
 import { RepoPicker } from '@/components/repo-picker';
 import { StreakSection } from '@/components/streak-section';
+import { FeedSection } from '@/components/feed-section';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/hooks/use-auth';
+import { useFriends } from '@/hooks/use-friends';
+import { useFeed } from '@/hooks/use-feed';
 import { useStreak } from '@/hooks/use-streak';
 import { listTrackedRepos, trackRepo, untrackRepo } from '@/lib/firebase-repos';
 import type { TrackedRepo } from '@/lib/firebase-repos';
@@ -68,6 +71,31 @@ export default function ReposScreen() {
     login: userProfile?.login ?? null,
     repos: tracked,
   });
+
+  // Friends + activity feed (Phase 3).
+  const { friends, refresh: refreshFriends } = useFriends(user?.uid ?? null);
+  const { state: feedState, entries: feedEntries, error: feedError, stale: feedStale, refresh: refreshFeed } = useFeed({
+    uid: user?.uid ?? null,
+    accessToken: githubAccessToken,
+    friends,
+  });
+
+  // Map useFeed's status to FeedSection's State shape.
+  const feedSectionState = (() => {
+    if (friends.length === 0) {
+      return { status: 'zero-friends' as const };
+    }
+    if (feedState === 'loading' && feedEntries.length === 0) {
+      return { status: 'loading' as const };
+    }
+    if (feedState === 'error' && feedEntries.length === 0) {
+      return { status: 'error' as const, message: feedError ?? 'Try again.' };
+    }
+    if (feedEntries.length === 0) {
+      return { status: 'empty' as const };
+    }
+    return { status: 'ready' as const, entries: feedEntries, stale: feedStale };
+  })();
 
   // ---- Share streak (system share sheet) ----
   // Fires the OS-native share sheet with a hype-man message. No third-party
@@ -225,15 +253,20 @@ export default function ReposScreen() {
     [user, refreshStreak],
   );
 
-  // ---- Pull-to-refresh: reload tracked repos AND the streak ----
+  // ---- Pull-to-refresh: reload tracked repos, streak, friends, feed ----
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await Promise.all([reloadTracked(), Promise.resolve(refreshStreak())]);
+      await Promise.all([
+        reloadTracked(),
+        Promise.resolve(refreshStreak()),
+        Promise.resolve(refreshFriends()),
+        Promise.resolve(refreshFeed()),
+      ]);
     } finally {
       setRefreshing(false);
     }
-  }, [reloadTracked, refreshStreak]);
+  }, [reloadTracked, refreshStreak, refreshFriends, refreshFeed]);
 
   // ---- Render: loading spinner until both auth + GitHub token are ready ----
   if (loading || !profileLoaded) {
@@ -305,6 +338,13 @@ export default function ReposScreen() {
               noTrackedRepos={true}
               onShare={handleShare}
             />
+            <View style={[styles.spacedTop]}>
+              <FeedSection
+                state={feedSectionState}
+                onRefresh={refreshFeed}
+                onRetry={refreshFeed}
+              />
+            </View>
             <View style={styles.center}>
               <ThemedText type="subtitle" style={styles.emptyHeading}>
                 Pick your projects
@@ -329,6 +369,13 @@ export default function ReposScreen() {
                     noTrackedRepos={false}
                     onShare={handleShare}
                   />
+                  <View style={styles.spacedTop}>
+                    <FeedSection
+                      state={feedSectionState}
+                      onRefresh={refreshFeed}
+                      onRetry={refreshFeed}
+                    />
+                  </View>
                   <ThemedText type="default" style={[styles.muted, styles.spacedTop, styles.listHeader]}>
                     Tracked projects
                   </ThemedText>

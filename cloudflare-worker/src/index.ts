@@ -17,6 +17,12 @@
  *   POST /repos/commits   — List a repo's commits by author since a date.
  *                            Returns trimmed { sha, date } array. Used by
  *                            the streak computation in lib/streak.ts.
+ *   POST /friends/feed    — Aggregate a friends list's recent commits
+ *                            (Phase 3). For each friend, fetches their
+ *                            recently-pushed public repos, then commits
+ *                            in each repo, and aggregates per-friend
+ *                            per-day. Returns a sorted feed (newest first,
+ *                            top 100).
  *
  * Secrets (set via `wrangler secret put`):
  *   GITHUB_OAUTH_CLIENT_ID       — OAuth app's public client_id
@@ -296,6 +302,231 @@ async function handleLookupGitHubUser(
   });
 }
 
+// ---------------------------------------------------------------------------
+// /friends/feed — aggregate a friends list's recent commits (Phase 3)
+// ---------------------------------------------------------------------------
+
+/** Shape of a friend as passed in the request body. */
+interface FriendRequest {
+  githubId: number;
+  login: string;
+  isOnCodeTrail?: boolean;
+  friendUid?: string | null;
+  avatarUrl?: string;
+  htmlUrl?: string;
+}
+
+/**
+ * Raw shape of a repo from `GET /users/{login}/repos`.
+ * We only need name, full_name, and pushed_at.
+ */
+interface GitHubRepoListItemRaw {
+  id: number;
+  name: string;
+  full_name: string;
+  pushed_at: string | null;
+  private: boolean;
+}
+
+/** Raw shape of a commit from `GET /repos/{owner}/{repo}/commits`. */
+interface GitHubCommitListItemRaw {
+  sha: string;
+  commit: {
+    message: string;
+    author: { date: string } | null;
+    committer: { date: string } | null;
+  };
+}
+
+/** Single feed entry as returned to the client. */
+interface FeedEntry {
+  friend: {
+    githubId: number;
+    login: string;
+    avatarUrl: string;
+    htmlUrl?: string;
+    isOnCodeTrail: boolean;
+    friendUid: string | null;
+  };
+  repo: {
+    fullName: string;
+    commitCount: number; // commits in the busiest repo
+    totalCommits: number; // total across ALL repos for this friend-day
+    latestSha: string;
+    latestMessage: string;
+  };
+  date: string; // YYYY-MM-DD (UTC for MVP)
+}
+
+/**
+ * Aggregate a friends list's recent commits into a feed.
+ *
+ * For each friend:
+ *   1. Fetch their recently-pushed public repos: `GET /users/{login}/repos
+ *      ?per_page=100&sort=pushed&type=public&since={daysAgo}`.
+ *   2. For each repo, fetch commits: `GET /repos/{owner}/{repo}/commits
+ *      ?author={login}&since={daysAgo}&per_page=100`.
+ *   3. Aggregate by friend+date, sum commit counts, pick busiest repo
+ *      per (friend, date).
+ *
+ * For 25 friends × 5 active repos = ~150 GitHub calls per feed load.
+ * Well under the 5,000/hr quota.
+ *
+ * Failed friends (rate limit, network) are added to `failedFriends` and
+ * skipped. The rest of the feed still returns.
+ */
+async function handleGetFriendFeed(
+  body: {
+    accessToken: string;
+    days?: number;
+    maxFriends?: number;
+    friends: FriendRequest[];
+  },
+): Promise<Response> {
+  const days = body.days ?? 7;
+  const maxFriends = body.maxFriends ?? 25;
+  const friends = body.friends.slice(0, maxFriends);
+  if (friends.length === 0) {
+    return jsonResponse({
+      fetchedAt: new Date().toISOString(),
+      entries: [],
+      rateLimited: false,
+      failedFriends: [],
+    });
+  }
+
+  // `since` for the repos list: pushed_at filter, to skip dormant repos.
+  // `since` for commits: filter to the window.
+  const sinceDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const sinceIso = sinceDate.toISOString();
+
+  const entries: FeedEntry[] = [];
+  const failedFriends: number[] = [];
+  let rateLimited = false;
+
+  // Process friends serially to be polite to the rate limiter. With
+  // 25 friends × 5 repos = 125 calls, even serial is < 10 sec.
+  // Parallelizing would be faster but could trip the secondary rate
+  // limiter (abuse detection).
+  for (const friend of friends) {
+    try {
+      // 1. List recently-pushed public repos.
+      const reposPath =
+        `/users/${encodeURIComponent(friend.login)}/repos` +
+        `?per_page=100&sort=pushed&type=public&since=${encodeURIComponent(sinceIso)}`;
+      const repos = await callGitHub<GitHubRepoListItemRaw[]>(
+        body.accessToken,
+        reposPath,
+      );
+
+      // 2. For each repo, get commits by this friend in the window.
+      //    Skip repos with 0 commits.
+      interface PerRepoCommits {
+        repo: { fullName: string; commitCount: number; latestSha: string; latestMessage: string };
+        date: string;
+      }
+      const perRepoCommits: PerRepoCommits[] = [];
+
+      for (const repo of repos) {
+        if (repo.private) continue; // Shouldn't happen with type=public, but defensive.
+        const [owner, repoName] = repo.full_name.split('/');
+        if (!owner || !repoName) continue;
+
+        const commitsPath =
+          `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repoName)}/commits` +
+          `?author=${encodeURIComponent(friend.login)}` +
+          `&since=${encodeURIComponent(sinceIso)}&per_page=100`;
+        const commits = await callGitHub<GitHubCommitListItemRaw[]>(
+          body.accessToken,
+          commitsPath,
+        );
+        if (commits.length === 0) continue;
+
+        // Use the first (most recent) commit's date as the entry's date.
+        // `commits` is newest-first.
+        const latest = commits[0];
+        const dateStr =
+          latest.commit.author?.date ?? latest.commit.committer?.date ?? '';
+        if (!dateStr) continue;
+        const date = dateStr.slice(0, 10); // YYYY-MM-DD (UTC)
+
+        perRepoCommits.push({
+          repo: {
+            fullName: repo.full_name,
+            commitCount: commits.length,
+            latestSha: latest.sha,
+            latestMessage: latest.commit.message.split('\n')[0].slice(0, 200), // truncate
+          },
+          date,
+        });
+      }
+
+      // 3. Aggregate per-day: pick the busiest repo for that day, and
+      //    sum total commits across all repos for the "+ N more" copy.
+      interface DayBucket {
+        busiest: PerRepoCommits;
+        totalCommits: number;
+      }
+      const byDate = new Map<string, DayBucket>();
+      for (const c of perRepoCommits) {
+        const existing = byDate.get(c.date);
+        if (existing) {
+          existing.totalCommits += c.repo.commitCount;
+          if (c.repo.commitCount > existing.busiest.repo.commitCount) {
+            existing.busiest = c;
+          }
+        } else {
+          byDate.set(c.date, { busiest: c, totalCommits: c.repo.commitCount });
+        }
+      }
+
+      for (const [, c] of byDate) {
+        entries.push({
+          friend: {
+            githubId: friend.githubId,
+            login: friend.login,
+            avatarUrl: friend.avatarUrl ?? '',
+            htmlUrl: friend.htmlUrl,
+            isOnCodeTrail: friend.isOnCodeTrail ?? false,
+            friendUid: friend.friendUid ?? null,
+          },
+          repo: {
+            fullName: c.busiest.repo.fullName,
+            commitCount: c.busiest.repo.commitCount,
+            totalCommits: c.totalCommits,
+            latestSha: c.busiest.repo.latestSha,
+            latestMessage: c.busiest.repo.latestMessage,
+          },
+          date: c.busiest.date,
+        });
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'unknown';
+      log('warn', 'Failed to load feed for friend', {
+        friend: friend.login,
+        error: msg,
+      });
+      if (msg.includes('rate limit')) rateLimited = true;
+      failedFriends.push(friend.githubId);
+      // Continue with the next friend.
+    }
+  }
+
+  // 4. Sort entries by date desc (most recent first), then by commit count
+  //    desc as a tiebreaker.
+  entries.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+    return b.repo.commitCount - a.repo.commitCount;
+  });
+
+  return jsonResponse({
+    fetchedAt: new Date().toISOString(),
+    entries: entries.slice(0, 100), // hard cap on response size
+    rateLimited,
+    failedFriends,
+  });
+}
+
 /**
  * Trimmed commit shape we return. We only need the date for the streak
  * computation; the SHA is for debugging if GitHub ever returns a weird
@@ -490,6 +721,22 @@ export default {
           repo: repo.value,
           author: author.value,
           since: since.value,
+        });
+      }
+
+      // POST /friends/feed — aggregate a friends list's recent commits
+      if (path === '/friends/feed') {
+        const accessToken = requireString(body, 'accessToken');
+        if (!accessToken.ok) return jsonResponse({ error: accessToken.error }, 400);
+        const friends = body.friends;
+        if (!Array.isArray(friends)) {
+          return jsonResponse({ error: 'Missing or invalid "friends" (expected array)' }, 400);
+        }
+        return await handleGetFriendFeed({
+          accessToken: accessToken.value,
+          ...(typeof body.days === 'number' ? { days: body.days } : {}),
+          ...(typeof body.maxFriends === 'number' ? { maxFriends: body.maxFriends } : {}),
+          friends: friends as FriendRequest[],
         });
       }
 
