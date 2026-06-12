@@ -2,10 +2,13 @@
  * StreakSection — the personal dashboard shown above the tracked repos.
  *
  * Renders one of four states:
- *   1. Loading: skeleton (just a muted text label)
- *   2. Ready: streak line + weekly summary + chart
- *   3. Error: shows a soft "couldn't load your streak" line, no chart
+ *   1. Loading: muted "Loading your streak..." line
+ *   2. Ready: big streak number + status line + weekly summary + chart
+ *   3. Error: soft "couldn't load" line
  *   4. Idle (no repos tracked): CTA to track a project
+ *
+ * The streak number is the FOCAL POINT — it's the largest text on the
+ * card. The chart is visual context, not the primary signal.
  *
  * Hype-man voice throughout. No shame, no comparison-bait.
  */
@@ -15,6 +18,7 @@ import { ThemedText } from './themed-text';
 import { WeeklyChart } from './weekly-chart';
 import {
   formatStreakLine,
+  formatStreakSubline,
   formatWeeklyLine,
   type StreakResult,
 } from '@/lib/streak';
@@ -37,10 +41,10 @@ export function StreakSection({ state, noTrackedRepos }: Props) {
   if (noTrackedRepos && state.status !== 'ready') {
     return (
       <View style={styles.card}>
-        <ThemedText type="subtitle" style={styles.heading}>
+        <ThemedText type="default" style={styles.muted}>
           Your streak starts here
         </ThemedText>
-        <ThemedText type="default" style={styles.muted}>
+        <ThemedText type="small" style={styles.muted}>
           Track a project to see your commit activity. Even a README counts.
         </ThemedText>
       </View>
@@ -71,19 +75,29 @@ export function StreakSection({ state, noTrackedRepos }: Props) {
   }
 
   // Ready
-  const { streak, shippedToday, weekly } = state.data;
+  const { streak, shippedToday, weekly, daysSinceLastShip, totalCommits } = state.data;
   const totalThisWeek = weekly.reduce((sum, d) => sum + d.count, 0);
+  const headline = formatStreakLine(streak, shippedToday, daysSinceLastShip);
+  const subline = formatStreakSubline(streak, shippedToday);
 
   return (
     <View style={styles.card}>
-      <ThemedText type="subtitle" style={styles.heading}>
-        {formatStreakLine(streak, shippedToday)}
+      {/* Headline: the streak itself. The "🔥" emoji can be the visual hook
+          and the number does the talking. */}
+      <ThemedText type="title" style={styles.headline}>
+        {headline}
       </ThemedText>
-      <ThemedText type="default" style={styles.muted}>
+      <ThemedText type="default" style={styles.subline}>
+        {subline}
+      </ThemedText>
+
+      <View style={styles.divider} />
+
+      <ThemedText type="default" style={styles.weekly}>
         {formatWeeklyLine(totalThisWeek)}
       </ThemedText>
       <View style={styles.chartSpacer} />
-      <WeeklyChart weekly={weekly} />
+      <WeeklyChart weekly={weekly} streakLength={streak} />
     </View>
   );
 }
@@ -95,15 +109,28 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#30363d',
     padding: Spacing.four,
-    gap: Spacing.one,
+    gap: Spacing.two,
   },
-  heading: {
-    fontSize: 20,
-    lineHeight: 26,
+  headline: {
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: '700',
+  },
+  subline: {
+    fontSize: 14,
+    color: '#8b949e',
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#21262d',
+    marginVertical: Spacing.two,
+  },
+  weekly: {
+    fontSize: 14,
+    color: '#8b949e',
   },
   muted: {
     color: '#8b949e',
-    opacity: 1, // override the default 0.7 — we want these readable
   },
   spacedTop: {
     marginTop: Spacing.two,

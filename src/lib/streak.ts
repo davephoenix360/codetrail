@@ -32,7 +32,8 @@ export interface DailyCommitCount {
 }
 
 export interface StreakResult {
-  /** Consecutive days with ≥1 commit, counting back from today (or yesterday). */
+  /** Consecutive days with ≥1 commit, ending at the most recent ship day
+   *  (which may be today, yesterday, or earlier if the user took a break). */
   streak: number;
   /** True if the user has shipped at least once today (local time). */
   shippedToday: boolean;
@@ -46,6 +47,10 @@ export interface StreakResult {
   reposScanned: number;
   /** Repos that failed (e.g., private, deleted, rate-limited). Surfaces in the UI. */
   reposFailed: string[];
+  /** YYYY-MM-DD of the most recent ship day, or null if no commits in window. */
+  lastShipped: string | null;
+  /** Days between today and the last ship day. 0 = shipped today, 1 = yesterday, etc. */
+  daysSinceLastShip: number | null;
 }
 
 /**
@@ -171,13 +176,51 @@ export async function loadStreak(
     }
   }
 
-  // Compute streak: walk back from today (or yesterday if today is empty)
+  // Compute streak: walk back from today (or the most recent ship day
+  // if today is empty) while commits > 0.
   let streak = 0;
   let shippedToday = (byDate.get(todayK) ?? 0) > 0;
   let cursor = shippedToday ? todayK : addDays(todayK, -1);
   while ((byDate.get(cursor) ?? 0) > 0) {
     streak++;
     cursor = addDays(cursor, -1);
+  }
+
+  // Find the most recent ship day and how many days ago it was. The cursor
+  // after the streak loop above is the first day with 0 commits BEFORE the
+  // streak — so the last ship day is cursor + 1.
+  let lastShipped: string | null = null;
+  let daysSinceLastShip: number | null = null;
+  if (streak > 0) {
+    lastShipped = addDays(cursor, 1);
+  } else {
+    // No streak. Find the most recent day with commits (search the window).
+    // Walk back from today until we find one.
+    let probe = todayK;
+    for (let i = 0; i < 365; i++) {
+      if ((byDate.get(probe) ?? 0) > 0) {
+        lastShipped = probe;
+        break;
+      }
+      probe = addDays(probe, -1);
+    }
+  }
+  if (lastShipped !== null) {
+    // Count days from lastShipped to todayK by walking forward.
+    let count = 0;
+    let walker = lastShipped;
+    while (walker !== todayK) {
+      walker = addDays(walker, 1);
+      count++;
+    }
+    daysSinceLastShip = count;
+  }
+
+  // Dev log: print the byDate map and the streak so we can diagnose
+  // "I have N commits but streak=0?" reports in the future.
+  if (__DEV__) {
+    console.log('[streak] byDate:', Object.fromEntries(byDate));
+    console.log('[streak] todayK:', todayK, 'lastShipped:', lastShipped, 'streak:', streak, 'shippedToday:', shippedToday);
   }
 
   // Compute weekly: 7 days ending today, oldest first
@@ -197,21 +240,52 @@ export async function loadStreak(
     generatedAt: Date.now(),
     reposScanned,
     reposFailed,
+    lastShipped,
+    daysSinceLastShip,
   };
 }
 
 /**
- * Format the streak number for display. We use the 🔥 emoji + a number
- * for streaks ≥ 1, and a different vibe for 0.
+ * Format the primary streak line. Returns the main heading copy.
+ * Examples:
+ *   formatStreakLine(7, true)  → "🔥 7-day streak"
+ *   formatStreakLine(1, false) → "🔥 1-day streak"
+ *   formatStreakLine(0, false, 1) → "🔥 0 — last shipped yesterday"
+ *   formatStreakLine(0, false, 5) → "🔥 0 — last shipped 5 days ago"
+ *   formatStreakLine(0, false, null) → "🔥 0 — start your streak"
  */
-export function formatStreakLine(streak: number, shippedToday: boolean): string {
-  if (streak === 0) {
-    return "Start your streak today.";
+export function formatStreakLine(
+  streak: number,
+  shippedToday: boolean,
+  daysSinceLastShip: number | null = null,
+): string {
+  if (streak >= 1) {
+    return `🔥 ${streak}-day streak`;
   }
-  if (shippedToday) {
-    return `🔥 ${streak}-day streak — You shipped.`;
+  // streak === 0
+  if (daysSinceLastShip === null) {
+    return "🔥 0 — start your streak";
   }
-  return `🔥 ${streak}-day streak — Ship something to keep it alive.`;
+  if (daysSinceLastShip === 0) {
+    // shippedToday is false but daysSinceLastShip is 0 — should be impossible
+    return "🔥 0 — start your streak";
+  }
+  if (daysSinceLastShip === 1) {
+    return "🔥 0 — last shipped yesterday";
+  }
+  return `🔥 0 — last shipped ${daysSinceLastShip} days ago`;
+}
+
+/**
+ * Format the secondary line (call-to-action under the streak).
+ */
+export function formatStreakSubline(
+  streak: number,
+  shippedToday: boolean,
+): string {
+  if (streak >= 1 && shippedToday) return "You shipped today. Keep the run alive.";
+  if (streak >= 1 && !shippedToday) return "Ship something today to keep the streak alive.";
+  return "Even a README counts.";
 }
 
 /**
