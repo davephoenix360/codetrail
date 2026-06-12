@@ -408,15 +408,31 @@ async function handleGetFriendFeed(
   // 25 friends × 5 repos = 125 calls, even serial is < 10 sec.
   // Parallelizing would be faster but could trip the secondary rate
   // limiter (abuse detection).
+  //
+  // REPO CAP: We previously used per_page=100 which caused timeouts
+  // for users with many active repos (e.g. @sindresorhus has 100+).
+  // The top 20 most-recently-pushed repos captures essentially all of
+  // a friend's recent activity (anything pushed > 7 days ago is
+  // outside the feed window anyway).
+  //
+  // NOTE: `/users/{login}/repos` does NOT accept the `since` param
+  // (it silently ignores it). We filter by `pushed_at` client-side.
+  const MAX_REPOS_PER_FRIEND = 20;
   for (const friend of friends) {
     try {
-      // 1. List recently-pushed public repos.
+      // 1. List recently-pushed public repos (top 20, sorted by pushed).
       const reposPath =
         `/users/${encodeURIComponent(friend.login)}/repos` +
-        `?per_page=100&sort=pushed&type=public&since=${encodeURIComponent(sinceIso)}`;
+        `?per_page=${MAX_REPOS_PER_FRIEND}&sort=pushed&type=public`;
       const repos = await callGitHub<GitHubRepoListItemRaw[]>(
         body.accessToken,
         reposPath,
+      );
+
+      // Client-side filter: skip repos not pushed to in the window.
+      // (The `since` query param on this endpoint is ignored by GitHub.)
+      const activeRepos = repos.filter(
+        (r) => r.pushed_at && r.pushed_at >= sinceIso,
       );
 
       // 2. For each repo, get commits by this friend in the window.
@@ -427,7 +443,7 @@ async function handleGetFriendFeed(
       }
       const perRepoCommits: PerRepoCommits[] = [];
 
-      for (const repo of repos) {
+      for (const repo of activeRepos) {
         if (repo.private) continue; // Shouldn't happen with type=public, but defensive.
         const [owner, repoName] = repo.full_name.split('/');
         if (!owner || !repoName) continue;

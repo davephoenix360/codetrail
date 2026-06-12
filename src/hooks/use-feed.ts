@@ -53,6 +53,9 @@ export function useFeed({ uid, accessToken, friends }: UseFeedInput): UseFeedRes
     }
     const myFetchId = ++fetchIdRef.current;
     setError(null);
+    if (__DEV__) {
+      console.log('[useFeed] refreshing', { friendsCount: friends.length, fetchId: myFetchId });
+    }
     try {
       const response: FeedResponse = await getFriendFeed(
         accessToken,
@@ -68,6 +71,13 @@ export function useFeed({ uid, accessToken, friends }: UseFeedInput): UseFeedRes
       );
       // Bail if a newer fetch has started.
       if (myFetchId !== fetchIdRef.current) return;
+      if (__DEV__) {
+        console.log('[useFeed] response', {
+          entries: response.entries.length,
+          failedFriends: response.failedFriends,
+          rateLimited: response.rateLimited,
+        });
+      }
       setEntries(response.entries);
       setStale(false);
       setState(response.entries.length === 0 ? 'empty' : 'ready');
@@ -80,6 +90,9 @@ export function useFeed({ uid, accessToken, friends }: UseFeedInput): UseFeedRes
           : e instanceof Error
             ? e.message
             : 'Could not load your friends\' ships.';
+      if (__DEV__) {
+        console.warn('[useFeed] refresh failed:', msg);
+      }
       setError(msg);
       setState(entries.length > 0 ? 'ready' : 'error');
     }

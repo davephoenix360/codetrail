@@ -11,6 +11,7 @@
  * updates.
  */
 import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
 
 import {
   addFriend as addFriendOp,
@@ -56,6 +57,19 @@ export function useFriends(uid: string | null): UseFriendsResult {
     }
   }, [uid]);
 
+  // Auto-refresh when the screen comes into focus. This is how the
+  // /friends page picks up a friend that was added on /friends/add,
+  // and how /repos picks up a friend that was added in any nested
+  // route. Without this, the user has to pull-to-refresh to see
+  // changes made on a different screen.
+  useFocusEffect(
+    useCallback(() => {
+      void refresh();
+    }, [refresh]),
+  );
+
+  // Also refresh on initial mount (covers screens that load before
+  // the focus effect fires — e.g. on cold start).
   useEffect(() => {
     void refresh();
   }, [refresh]);
