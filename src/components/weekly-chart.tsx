@@ -1,22 +1,23 @@
 /**
- * Weekly chart — 7 bars, one per day, oldest left → today right.
+ * WeeklyChart — 7 bars, one per day, oldest left → today right.
  *
- * Coloring:
- *   - Today: brand blue, regardless of count
- *   - Streak days (the most recent N days with ≥1 commit, where N = streak):
- *     a brighter "active" gray to highlight the run
- *   - Other days with commits: muted gray
- *   - Empty days: very dark
+ * Coloring matches the design draft:
+ *   - 0 commits → empty dark
+ *   - 1-2 commits → bar1 (faintest green)
+ *   - 3-5 commits → bar2
+ *   - 6-9 commits → bar3
+ *   - 10+ commits → bar4 (brightest green)
+ *   - Today → always highlighted with a blue ring
+ *   - Streak days → a slightly different blue to mark the run
  *
- * The streak highlighting makes the visual match the headline — you can
- * SEE the streak. Tapping a bar could (v2.0) show a tooltip; for MVP,
- * the count is shown as a small label above the bar.
+ * GitHub's green scale is intentionally familiar to devs. The blue
+ * ring on today is the brand accent.
  */
 import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from './themed-text';
 import type { DailyCommitCount } from '@/lib/streak';
-import { Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 
 interface Props {
   weekly: DailyCommitCount[];
@@ -40,19 +41,22 @@ function dayLetter(dateKey: string, timeZone?: string): string {
   return DAY_LETTERS[localDay.getDay()];
 }
 
+/** Map a commit count to a color tier (0 = empty, 4 = brightest). */
+function countTier(count: number): number {
+  if (count === 0) return 0;
+  if (count <= 2) return 1;
+  if (count <= 5) return 2;
+  if (count <= 9) return 3;
+  return 4;
+}
+
 export function WeeklyChart({ weekly, streakLength, timeZone }: Props) {
   if (weekly.length === 0) return null;
   const maxCount = Math.max(1, ...weekly.map((d) => d.count));
   const todayKey = weekly[weekly.length - 1]?.date;
 
-  // The streak occupies the last `streakLength` days of `weekly`, but ONLY
-  // the days that actually have commits. If streakLength=3 and the last
-  // 3 days had commits, those 3 bars are colored as streak. If the streak
-  // ended 2 days ago (so today + yesterday are empty but 3-5 days ago had
-  // commits), the streak days are 3-5.
-  //
-  // Walk from the right, counting days with ≥1 commit, until we've found
-  // `streakLength` of them.
+  // Walk from the right, counting days with ≥1 commit, until we've
+  // found `streakLength` of them. These get the "streak" treatment.
   const isStreakDay = new Set<string>();
   let remaining = streakLength;
   for (let i = weekly.length - 1; i >= 0 && remaining > 0; i--) {
@@ -70,24 +74,37 @@ export function WeeklyChart({ weekly, streakLength, timeZone }: Props) {
             ? BAR_HEIGHT_MIN
             : BAR_HEIGHT_MIN + ((d.count / maxCount) * (BAR_HEIGHT_MAX - BAR_HEIGHT_MIN));
         const isToday = d.date === todayKey;
-        const hasCommits = d.count > 0;
+        const tier = countTier(d.count);
         const isStreak = isStreakDay.has(d.date);
 
-        const barColor = isToday
-          ? '#208AEF' // brand blue — today is always highlighted
-          : isStreak
-            ? '#4d8de3' // brighter blue — streak days
-            : hasCommits
-              ? '#30363d' // gray — non-streak days with commits
-              : '#21262d'; // dark — empty days
+        // Bar color: today > streak (overrides) > tier color > empty
+        const barColor = isStreak
+          ? Colors.dark.barStreak
+          : isToday
+            ? Colors.dark.barToday
+            : tier === 0
+              ? Colors.dark.barEmpty
+              : tier === 1
+                ? Colors.dark.bar1
+                : tier === 2
+                  ? Colors.dark.bar2
+                  : tier === 3
+                    ? Colors.dark.bar3
+                    : Colors.dark.bar4;
 
         return (
           <View key={d.date} style={styles.barColumn}>
-            <ThemedText type="small" style={[styles.count, !hasCommits && styles.countMuted]}>
-              {hasCommits ? d.count : ''}
+            <ThemedText type="tiny" style={[styles.count, d.count === 0 && styles.countMuted]}>
+              {d.count > 0 ? d.count : ''}
             </ThemedText>
-            <View style={[styles.bar, { height, backgroundColor: barColor }]} />
-            <ThemedText type="small" style={[styles.dayLabel, isToday && styles.dayLabelToday]}>
+            <View
+              style={[
+                styles.bar,
+                { height, backgroundColor: barColor },
+                isToday && styles.barToday,
+              ]}
+            />
+            <ThemedText type="tiny" style={[styles.dayLabel, isToday && styles.dayLabelToday]}>
               {dayLetter(d.date, timeZone)}
             </ThemedText>
           </View>
@@ -102,10 +119,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.two,
-    backgroundColor: '#161b22',
-    borderRadius: 12,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.three,
+    backgroundColor: Colors.dark.raised,
+    borderRadius: Radius.card,
   },
   barColumn: {
     flex: 1,
@@ -114,24 +131,23 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
   },
   count: {
-    fontSize: 11,
-    color: '#8b949e',
+    color: Colors.dark.muted,
     minHeight: 14,
+    textAlign: 'center',
   },
   countMuted: {
     color: 'transparent',
   },
   bar: {
     width: '60%',
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 4,
+    borderTopLeftRadius: 3,
+    borderTopRightRadius: 3,
   },
-  dayLabel: {
-    fontSize: 11,
-    color: '#8b949e',
+  barToday: {
+    borderWidth: 2,
+    borderColor: Colors.dark.accent,
+    borderRadius: 4,
   },
-  dayLabelToday: {
-    color: '#208AEF',
-    fontWeight: '700',
-  },
+  dayLabel: { color: Colors.dark.faint, textAlign: 'center' },
+  dayLabelToday: { color: Colors.dark.accent, fontWeight: '700' },
 });

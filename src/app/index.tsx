@@ -16,7 +16,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { SignInWithGitHub } from '@/components/sign-in-with-github';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 
 export default function HomeScreen() {
   const { user, loading, isSignedIn } = useAuth();
@@ -31,7 +31,7 @@ export default function HomeScreen() {
   if (loading) {
     return (
       <ThemedView style={styles.container}>
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color={Colors.dark.accent} />
       </ThemedView>
     );
   }
@@ -40,7 +40,7 @@ export default function HomeScreen() {
     // Redirect is in flight; show a brief placeholder.
     return (
       <ThemedView style={styles.container}>
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color={Colors.dark.accent} />
       </ThemedView>
     );
   }
@@ -49,13 +49,16 @@ export default function HomeScreen() {
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.content}>
-          <ThemedText type="title" style={styles.heading}>
+          <ThemedText type="display" style={styles.heading}>
+            🔥
+          </ThemedText>
+          <ThemedText type="h1" style={styles.title}>
             CodeTrail
           </ThemedText>
-          <ThemedText style={styles.tagline}>
+          <ThemedText type="bodyBold" style={styles.tagline}>
             The hype-man for your coding projects.
           </ThemedText>
-          <ThemedText style={styles.muted}>
+          <ThemedText type="small" style={styles.muted}>
             Sign in with GitHub to start tracking your streak. No judgment, just momentum.
           </ThemedText>
           <SignInWithGitHub />
@@ -66,7 +69,9 @@ export default function HomeScreen() {
               onPress={() => router.replace('/repos')}
               style={styles.fallback}
             >
-              <ThemedText type="link">Go to your projects →</ThemedText>
+              <ThemedText type="link" style={styles.fallbackLabel}>
+                Go to your projects →
+              </ThemedText>
             </Pressable>
           ) : null}
         </View>
@@ -94,18 +99,21 @@ const styles = StyleSheet.create({
   },
   heading: {
     textAlign: 'center',
+    fontSize: 64,
+    lineHeight: 72,
+    // Soft glow on the flame
+    textShadowColor: 'rgba(247, 129, 102, 0.35)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 20,
   },
-  tagline: {
-    fontSize: 18,
-    textAlign: 'center',
-    fontWeight: '500',
-  },
+  title: { textAlign: 'center', letterSpacing: -0.4 },
+  tagline: { textAlign: 'center' },
   muted: {
     textAlign: 'center',
-    opacity: 0.7,
+    color: Colors.dark.muted,
     marginTop: Spacing.one,
+    marginBottom: Spacing.four,
   },
-  fallback: {
-    marginTop: Spacing.four,
-  },
+  fallback: { marginTop: Spacing.four },
+  fallbackLabel: { color: Colors.dark.accent },
 });

@@ -29,7 +29,7 @@ import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/hooks/use-auth';
 import { useFriends, FRIEND_CAP } from '@/hooks/use-friends';
 import { resolveFriendByLogin } from '@/lib/firebase-friends';
-import { Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 
 export default function AddFriendScreen() {
   const { user, userProfile, githubAccessToken } = useAuth();
@@ -79,9 +79,9 @@ export default function AddFriendScreen() {
         options={{
           title: 'Add a friend',
           headerShown: true,
-          headerStyle: { backgroundColor: '#0d1117' },
-          headerTitleStyle: { color: '#e6edf3' },
-          headerTintColor: '#e6edf3',
+          headerStyle: { backgroundColor: Colors.dark.bg },
+          headerTitleStyle: { color: Colors.dark.text, fontWeight: '700' },
+          headerTintColor: Colors.dark.text,
         }}
       />
       <KeyboardAvoidingView
@@ -89,14 +89,14 @@ export default function AddFriendScreen() {
         style={styles.kav}
       >
         <View style={styles.body}>
-          <ThemedText type="default" style={styles.label}>
+          <ThemedText type="smallBold" style={styles.label}>
             GitHub username
           </ThemedText>
           <TextInput
             value={login}
             onChangeText={setLogin}
             placeholder="@diepreyecd"
-            placeholderTextColor="#484f58"
+            placeholderTextColor={Colors.dark.faint}
             autoCapitalize="none"
             autoCorrect={false}
             autoFocus
@@ -158,40 +158,25 @@ export default function AddFriendScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0d1117',
-  },
-  kav: {
-    flex: 1,
-  },
-  body: {
-    flex: 1,
-    padding: Spacing.four,
-  },
+  container: { flex: 1, backgroundColor: Colors.dark.bg },
+  kav: { flex: 1 },
+  body: { flex: 1, padding: Spacing.four },
   label: {
-    fontSize: 14,
-    fontWeight: '600',
+    color: Colors.dark.text,
     marginBottom: Spacing.two,
   },
   input: {
-    backgroundColor: '#161b22',
-    borderRadius: 8,
+    backgroundColor: Colors.dark.surface,
+    borderRadius: Radius.card,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#30363d',
+    borderColor: Colors.dark.border,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
-    color: '#e6edf3',
+    color: Colors.dark.text,
     fontSize: 16,
   },
-  hint: {
-    color: '#8b949e',
-    marginTop: Spacing.two,
-  },
-  error: {
-    color: '#f85149',
-    marginTop: Spacing.three,
-  },
+  hint: { color: Colors.dark.muted, marginTop: Spacing.two },
+  error: { color: Colors.dark.danger, marginTop: Spacing.three },
   actions: {
     flexDirection: 'row',
     gap: Spacing.three,
@@ -201,29 +186,17 @@ const styles = StyleSheet.create({
   btn: {
     flex: 1,
     paddingVertical: Spacing.three,
-    borderRadius: 8,
+    borderRadius: Radius.chip,
     alignItems: 'center',
   },
-  btnPrimary: {
-    backgroundColor: '#208AEF',
-  },
-  btnPrimaryLabel: {
-    color: '#fff',
-    fontWeight: '600',
-  },
+  btnPrimary: { backgroundColor: Colors.dark.accent },
+  btnPrimaryLabel: { color: '#fff' },
   btnSecondary: {
     backgroundColor: 'transparent',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#30363d',
+    borderColor: Colors.dark.border,
   },
-  btnSecondaryLabel: {
-    color: '#e6edf3',
-    fontWeight: '600',
-  },
-  btnPressed: {
-    opacity: 0.7,
-  },
-  btnDisabled: {
-    opacity: 0.4,
-  },
+  btnSecondaryLabel: { color: Colors.dark.text },
+  btnPressed: { opacity: 0.7 },
+  btnDisabled: { opacity: 0.4 },
 });

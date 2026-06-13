@@ -15,7 +15,8 @@ export function ThemedView({ style, lightColor, darkColor, ...otherProps }: Them
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
   const colors = isDark ? Colors.dark : Colors.light;
-  const backgroundColor = (isDark ? darkColor : lightColor) ?? colors.background;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const backgroundColor = (isDark ? darkColor : lightColor) ?? (isDark ? (colors as any).bg : (colors as any).background);
 
   return <View style={[{ backgroundColor }, style]} {...otherProps} />;
 }

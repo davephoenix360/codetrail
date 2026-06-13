@@ -1,19 +1,24 @@
 /**
  * ThemedText — auto-themed text using react-native's built-in useColorScheme.
- * Supports a `type` variant for our heading hierarchy and optional
- * `lightColor` / `darkColor` overrides.
+ * Supports a `type` variant for the brand type scale and optional
+ * `lightColor` / `darkColor` overrides. The `type` values map 1:1 to
+ * the `Type` constants in `@/constants/theme`, plus a few legacy
+ * aliases (`'default'`, `'title'`, `'subtitle'`, `'link'`, `'code'`)
+ * that the older codebase still passes.
  */
 import { Platform, StyleSheet, Text, type TextProps, useColorScheme } from 'react-native';
 
-import { Colors, Fonts } from '@/constants/theme';
+import { Colors, Fonts, Type } from '@/constants/theme';
+
+export type ThemedTextType = keyof typeof Type | 'default' | 'title' | 'subtitle' | 'link' | 'linkPrimary' | 'code';
 
 export type ThemedTextProps = TextProps & {
-  type?: 'default' | 'title' | 'small' | 'smallBold' | 'subtitle' | 'link' | 'linkPrimary' | 'code';
+  type?: ThemedTextType;
   lightColor?: string;
   darkColor?: string;
 };
 
-export function ThemedText({ style, type = 'default', lightColor, darkColor, ...rest }: ThemedTextProps) {
+export function ThemedText({ style, type = 'body', lightColor, darkColor, ...rest }: ThemedTextProps) {
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
   const colors = isDark ? Colors.dark : Colors.light;
@@ -23,32 +28,30 @@ export function ThemedText({ style, type = 'default', lightColor, darkColor, ...
     <Text
       style={[
         { color },
-        type === 'default' && styles.default,
-        type === 'title' && styles.title,
-        type === 'small' && styles.small,
-        type === 'smallBold' && styles.smallBold,
-        type === 'subtitle' && styles.subtitle,
-        type === 'link' && styles.link,
-        type === 'linkPrimary' && styles.linkPrimary,
-        type === 'code' && styles.code,
+        type === 'display' && { ...Type.display, color: isDark ? Colors.dark.fire1 : colors.text },
+        type === 'h1' && Type.h1,
+        type === 'h2' && Type.h2,
+        type === 'h3' && Type.h3,
+        type === 'body' && Type.body,
+        type === 'bodyBold' && Type.bodyBold,
+        type === 'small' && Type.small,
+        type === 'smallBold' && Type.smallBold,
+        type === 'tiny' && Type.tiny,
+        type === 'mono' && Type.mono,
+        // Legacy aliases — older call sites still use these names.
+        type === 'title' && Type.h1,
+        type === 'subtitle' && Type.h2,
+        type === 'default' && Type.body,
+        type === 'link' && { ...Type.small, color: isDark ? Colors.dark.accent : colors.text },
+        type === 'linkPrimary' && { ...Type.small, color: isDark ? Colors.dark.accent : colors.text },
+        type === 'code' && {
+          fontFamily: Fonts?.mono ?? 'monospace',
+          fontWeight: Platform.select({ android: '700' }) ?? '500',
+          fontSize: 12,
+        },
         style,
       ]}
       {...rest}
     />
   );
 }
-
-const styles = StyleSheet.create({
-  small: { fontSize: 14, lineHeight: 20, fontWeight: '500' },
-  smallBold: { fontSize: 14, lineHeight: 20, fontWeight: '700' },
-  default: { fontSize: 16, lineHeight: 24, fontWeight: '500' },
-  title: { fontSize: 48, fontWeight: '600', lineHeight: 52 },
-  subtitle: { fontSize: 32, lineHeight: 44, fontWeight: '600' },
-  link: { lineHeight: 30, fontSize: 14 },
-  linkPrimary: { lineHeight: 30, fontSize: 14, color: '#3c87f7' },
-  code: {
-    fontFamily: Fonts?.mono ?? 'monospace',
-    fontWeight: Platform.select({ android: '700' }) ?? '500',
-    fontSize: 12,
-  },
-});

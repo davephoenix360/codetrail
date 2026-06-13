@@ -1,10 +1,12 @@
 /**
  * FeedSection — the activity feed on /repos, below the streak section.
  *
- * Renders one of four states:
- *  - loading: muted "Looking up your friends' ships..."
+ * Renders one of five states:
+ *  - loading: muted "Catching up on everyone's ships..."
  *  - empty:   "Your friends are quiet this week. No pressure, neither
  *             are you. 🌱"  (no recent activity from anyone)
+ *  - not-on-app: "None of your friends are on CodeTrail yet. Invite
+ *             them so you can see their streaks too."
  *  - zero-friends: "Follow a friend to see what they're shipping." +
  *                  CTA to /friends
  *  - error:   "Couldn't load your friends' ships." + retry
@@ -12,6 +14,9 @@
  *
  * If `stale` is true (cache > 1 hour), we add a tiny "updated 2h ago"
  * line at the top so the user knows we have older data.
+ *
+ * Hype-man voice. See `~/.hermes/skills/creative/codetrail-design/
+ * references/copy-bank.md`.
  */
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
@@ -19,7 +24,7 @@ import { router } from 'expo-router';
 import { ThemedText } from './themed-text';
 import { FeedEntry } from './feed-entry';
 import type { FeedEntry as FeedEntryT } from '@/lib/github-api';
-import { Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 
 type State =
   | { status: 'loading' }
@@ -39,8 +44,8 @@ export function FeedSection({ state, onRefresh, onRetry }: Props) {
   if (state.status === 'loading') {
     return (
       <View style={styles.card}>
-        <ThemedText type="default" style={styles.muted}>
-          Looking up your friends' ships…
+        <ThemedText type="small" style={styles.muted}>
+          Catching up on everyone's ships…
         </ThemedText>
       </View>
     );
@@ -49,17 +54,19 @@ export function FeedSection({ state, onRefresh, onRetry }: Props) {
   if (state.status === 'zero-friends') {
     return (
       <View style={styles.card}>
-        <ThemedText type="default" style={styles.heading}>
+        <ThemedText type="h3" style={styles.heading}>
           Your friends' ships
         </ThemedText>
-        <ThemedText type="default" style={styles.muted}>
+        <ThemedText type="small" style={styles.muted}>
           Follow a friend to see what they're shipping.
         </ThemedText>
         <Pressable
           onPress={() => router.push('/friends')}
-          style={[styles.button, styles.spacedTop]}
+          style={({ pressed }) => [styles.primaryBtn, pressed && styles.btnPressed]}
         >
-          <ThemedText type="smallBold">Add a friend</ThemedText>
+          <ThemedText type="smallBold" style={styles.primaryBtnLabel}>
+            Add a friend
+          </ThemedText>
         </Pressable>
       </View>
     );
@@ -68,12 +75,25 @@ export function FeedSection({ state, onRefresh, onRetry }: Props) {
   if (state.status === 'not-on-app') {
     return (
       <View style={styles.card}>
-        <ThemedText type="default" style={styles.heading}>
+        <ThemedText type="h3" style={styles.heading}>
           Your friends' ships
         </ThemedText>
-        <ThemedText type="default" style={styles.muted}>
-          None of your friends are on CodeTrail yet. Invite them so you can see their streaks too.
-        </ThemedText>
+        <View style={styles.notOnAppBlock}>
+          <ThemedText style={styles.bigEmoji} accessibilityElementsHidden>
+            👀
+          </ThemedText>
+          <ThemedText type="small" style={styles.mutedCenter}>
+            None of your friends are on CodeTrail yet. Invite them so you can see their streaks too.
+          </ThemedText>
+          <Pressable
+            onPress={() => router.push('/friends')}
+            style={({ pressed }) => [styles.primaryBtn, pressed && styles.btnPressed]}
+          >
+            <ThemedText type="smallBold" style={styles.primaryBtnLabel}>
+              Invite a friend
+            </ThemedText>
+          </Pressable>
+        </View>
       </View>
     );
   }
@@ -81,43 +101,43 @@ export function FeedSection({ state, onRefresh, onRetry }: Props) {
   if (state.status === 'empty') {
     return (
       <View style={styles.card}>
-        <ThemedText type="default" style={styles.heading}>
+        <ThemedText type="h3" style={styles.heading}>
           Your friends' ships
         </ThemedText>
-        <ThemedText type="default" style={styles.muted}>
-          Your friends are quiet this week. No pressure — neither are you. 🌱
-        </ThemedText>
-        <Pressable
-          onPress={onRefresh}
-          accessibilityLabel="Refresh feed"
-          style={styles.refreshBtn}
-        >
-          <ThemedText type="small" style={styles.refreshLabel}>
-            Refresh
+        <View style={styles.notOnAppBlock}>
+          <ThemedText style={styles.bigEmoji} accessibilityElementsHidden>
+            🌱
           </ThemedText>
-        </Pressable>
+          <ThemedText type="small" style={styles.mutedCenter}>
+            Your friends are quiet this week. No pressure — neither are you.
+          </ThemedText>
+        </View>
       </View>
     );
   }
 
   if (state.status === 'error') {
     return (
-      <View style={styles.card}>
-        <ThemedText type="default" style={styles.heading}>
-          Your friends' ships
-        </ThemedText>
-        <ThemedText type="default" style={styles.muted}>
-          Couldn't load your friends' ships.
-        </ThemedText>
-        <ThemedText type="small" style={[styles.muted, styles.spacedTop]}>
-          {state.message}
-        </ThemedText>
-        <Pressable
-          onPress={onRetry}
-          style={[styles.retry, styles.spacedTop]}
-        >
-          <ThemedText type="smallBold">Try again</ThemedText>
-        </Pressable>
+      <View style={[styles.card, styles.errorCard]}>
+        <View style={styles.errorRow}>
+          <View style={styles.errorDot} />
+          <View style={{ flex: 1 }}>
+            <ThemedText type="smallBold" style={styles.errorTitle}>
+              Couldn't load your friends' ships
+            </ThemedText>
+            <ThemedText type="small" style={styles.errorMsg}>
+              {state.message}
+            </ThemedText>
+            <Pressable
+              onPress={onRetry}
+              style={({ pressed }) => [styles.retryBtn, pressed && styles.btnPressed]}
+            >
+              <ThemedText type="smallBold" style={styles.retryLabel}>
+                Try again
+              </ThemedText>
+            </Pressable>
+          </View>
+        </View>
       </View>
     );
   }
@@ -126,21 +146,22 @@ export function FeedSection({ state, onRefresh, onRetry }: Props) {
   return (
     <View style={styles.card}>
       <View style={styles.headerRow}>
-        <ThemedText type="default" style={styles.heading}>
+        <ThemedText type="h3" style={styles.heading}>
           Your friends' ships
         </ThemedText>
         <Pressable
           onPress={onRefresh}
+          accessibilityRole="button"
           accessibilityLabel="Refresh feed"
           hitSlop={8}
-          style={styles.refreshIconBtn}
+          style={({ pressed }) => [styles.refreshBtn, pressed && styles.btnPressed]}
         >
           {state.stale ? (
-            <ThemedText type="small" style={styles.refreshLabel}>
+            <ThemedText type="smallBold" style={styles.refreshLabel}>
               ↻ Refresh
             </ThemedText>
           ) : (
-            <ActivityIndicator color="#208AEF" size="small" />
+            <ActivityIndicator color={Colors.dark.accent} size="small" />
           )}
         </Pressable>
       </View>
@@ -153,55 +174,75 @@ export function FeedSection({ state, onRefresh, onRetry }: Props) {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#0d1117',
-    borderRadius: 12,
+    backgroundColor: Colors.dark.surface,
+    borderRadius: Radius.modal,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#30363d',
-    padding: Spacing.four,
+    borderColor: Colors.dark.border,
+    padding: Spacing.five,
+    gap: Spacing.three,
   },
+  errorCard: {
+    backgroundColor: Colors.dark.dangerSoft,
+    borderColor: 'rgba(248,81,73,0.3)',
+  },
+  errorRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.three,
+  },
+  errorDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.dark.danger,
+    marginTop: 6,
+  },
+  errorTitle: { color: Colors.dark.text },
+  errorMsg: { color: Colors.dark.muted, marginTop: 2, marginBottom: Spacing.two },
+
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.two,
   },
-  heading: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#e6edf3',
+  heading: { color: Colors.dark.text },
+  muted: { color: Colors.dark.muted },
+  mutedCenter: {
+    color: Colors.dark.muted,
+    textAlign: 'center',
+    maxWidth: 280,
   },
-  muted: {
-    color: '#8b949e',
+  notOnAppBlock: {
+    alignItems: 'center',
+    paddingVertical: Spacing.three,
+    gap: Spacing.three,
   },
-  spacedTop: {
-    marginTop: Spacing.three,
+  bigEmoji: { fontSize: 36, lineHeight: 40 },
+
+  primaryBtn: {
+    backgroundColor: Colors.dark.accent,
+    paddingVertical: Spacing.three,
+    paddingHorizontal: Spacing.five,
+    borderRadius: Radius.chip,
+    alignSelf: 'center',
   },
-  button: {
+  primaryBtnLabel: { color: '#fff' },
+  btnPressed: { opacity: 0.7 },
+
+  retryBtn: {
     alignSelf: 'flex-start',
-    backgroundColor: '#208AEF',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.two,
-    borderRadius: 8,
-  },
-  retry: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.two,
-    borderRadius: 8,
+    backgroundColor: 'transparent',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#30363d',
+    borderColor: Colors.dark.border,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    borderRadius: Radius.chip,
   },
-  refreshIconBtn: {
+  retryLabel: { color: Colors.dark.text },
+
+  refreshBtn: {
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.one,
   },
-  refreshBtn: {
-    alignSelf: 'flex-start',
-    marginTop: Spacing.three,
-  },
-  refreshLabel: {
-    color: '#208AEF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
+  refreshLabel: { color: Colors.dark.accent },
 });

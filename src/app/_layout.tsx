@@ -24,8 +24,17 @@
 import * as WebBrowser from 'expo-web-browser';
 import { Stack } from 'expo-router';
 
+import { Colors } from '@/constants/theme';
+
 WebBrowser.maybeCompleteAuthSession();
 
 export default function RootLayout() {
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: Colors.dark.bg },
+      }}
+    />
+  );
 }

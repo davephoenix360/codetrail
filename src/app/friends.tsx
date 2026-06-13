@@ -31,7 +31,7 @@ import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/hooks/use-auth';
 import { useFriends, FRIEND_CAP } from '@/hooks/use-friends';
 import type { Friend } from '@/lib/firebase-friends';
-import { Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 
 export default function FriendsScreen() {
   const { user, userProfile } = useAuth();
@@ -82,16 +82,16 @@ export default function FriendsScreen() {
         options={{
           title: 'Friends',
           headerShown: true,
-          headerStyle: { backgroundColor: '#0d1117' },
-          headerTitleStyle: { color: '#e6edf3' },
-          headerTintColor: '#e6edf3',
+          headerStyle: { backgroundColor: Colors.dark.bg },
+          headerTitleStyle: { color: Colors.dark.text, fontWeight: '700' },
+          headerTintColor: Colors.dark.text,
           headerRight: () => (
             <Pressable
               onPress={() => router.push('/friends/add')}
               accessibilityLabel="Add a friend"
-              style={({ pressed }) => [styles.headerBtn, pressed && styles.headerBtnPressed]}
+              style={({ pressed }) => [styles.headerBtn, pressed && styles.btnPressed]}
             >
-              <ThemedText type="default" style={styles.headerBtnLabel}>
+              <ThemedText type="smallBold" style={styles.headerBtnLabel}>
                 + Add
               </ThemedText>
             </Pressable>
@@ -100,40 +100,49 @@ export default function FriendsScreen() {
       />
       {userProfile?.login ? (
         <ThemedText type="small" style={styles.subhead}>
-          Friends see your streak and you see theirs.{'\n'}
-          {friends.length} of {FRIEND_CAP} following
+          {friends.length > 0
+            ? `Friends see your streak and you see theirs.\n${friends.length} of ${FRIEND_CAP} following`
+            : 'Add up to 25 friends. Their ships appear in your feed.'}
         </ThemedText>
       ) : null}
 
       {state === 'loading' ? (
         <View style={styles.center}>
-          <ActivityIndicator />
+          <ActivityIndicator color={Colors.dark.accent} />
+          <ThemedText type="small" style={[styles.muted, styles.spacedTop]}>
+            Rounding up the crew…
+          </ThemedText>
         </View>
       ) : state === 'error' ? (
-        <View style={styles.center}>
-          <ThemedText type="default" style={styles.muted}>
-            Couldn't load your friends.
+        <View style={[styles.center, styles.errorCard]}>
+          <ThemedText type="smallBold" style={styles.errorTitle}>
+            Couldn't load your friends
           </ThemedText>
           <ThemedText type="small" style={[styles.muted, styles.spacedTop]}>
             {error}
           </ThemedText>
           <Pressable onPress={refresh} style={[styles.retry, styles.spacedTop]}>
-            <ThemedText type="smallBold">Try again</ThemedText>
+            <ThemedText type="smallBold" style={styles.retryLabel}>Try again</ThemedText>
           </Pressable>
         </View>
       ) : friends.length === 0 ? (
-        <View style={styles.center}>
-          <ThemedText type="subtitle" style={styles.emptyHeading}>
+        <View style={styles.emptyState}>
+          <ThemedText style={styles.emptyEmoji} accessibilityElementsHidden>
+            👀
+          </ThemedText>
+          <ThemedText type="h2" style={styles.emptyHeading}>
             No friends yet
           </ThemedText>
-          <ThemedText type="default" style={[styles.muted, styles.spacedTop, styles.emptyBody]}>
-            Follow a friend to see what they're shipping.
+          <ThemedText type="small" style={[styles.muted, styles.spacedTop, styles.emptyBody]}>
+            Follow a friend to see what they're shipping. Their streak, their week, the works.
           </ThemedText>
           <Pressable
             onPress={() => router.push('/friends/add')}
-            style={[styles.button, styles.spacedTop]}
+            style={({ pressed }) => [styles.primaryBtn, pressed && styles.btnPressed, styles.spacedTop]}
           >
-            <ThemedText type="smallBold">Add your first friend</ThemedText>
+            <ThemedText type="smallBold" style={styles.primaryBtnLabel}>
+              Add your first friend
+            </ThemedText>
           </Pressable>
         </View>
       ) : (
@@ -143,7 +152,11 @@ export default function FriendsScreen() {
           contentContainerStyle={styles.listContent}
           ItemSeparatorComponent={() => <View style={styles.sep} />}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={Colors.dark.muted}
+            />
           }
           renderItem={({ item }) => (
             <FriendListItem
@@ -175,12 +188,20 @@ function FriendListItem({
       >
         <Image source={{ uri: friend.avatarUrl }} style={styles.avatar} />
         <View style={styles.rowText}>
-          <ThemedText type="default" style={styles.login}>
+          <ThemedText type="bodyBold" style={styles.login}>
             @{friend.login}
           </ThemedText>
-          <ThemedText type="small" style={styles.muted}>
-            {friend.isOnCodeTrail ? 'On CodeTrail' : 'Not on CodeTrail'}
-          </ThemedText>
+          <View style={styles.metaRow}>
+            {friend.isOnCodeTrail ? (
+              <ThemedText type="tiny" style={styles.metaOn}>
+                ✓ On CodeTrail
+              </ThemedText>
+            ) : (
+              <ThemedText type="tiny" style={styles.metaOff}>
+                Not on CodeTrail
+              </ThemedText>
+            )}
+          </View>
         </View>
       </Pressable>
       <Pressable
@@ -188,7 +209,7 @@ function FriendListItem({
         accessibilityLabel={`Stop following @${friend.login}`}
         style={({ pressed }) => [styles.removeBtn, pressed && styles.removeBtnPressed]}
       >
-        <ThemedText type="small" style={styles.removeLabel}>
+        <ThemedText type="tiny" style={styles.removeLabel}>
           Remove
         </ThemedText>
       </Pressable>
@@ -197,12 +218,9 @@ function FriendListItem({
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0d1117',
-  },
+  container: { flex: 1, backgroundColor: Colors.dark.bg },
   subhead: {
-    color: '#8b949e',
+    color: Colors.dark.muted,
     paddingHorizontal: Spacing.four,
     paddingTop: Spacing.two,
     paddingBottom: Spacing.three,
@@ -210,46 +228,59 @@ const styles = StyleSheet.create({
   headerBtn: {
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.one,
+    marginRight: Spacing.two,
   },
-  headerBtnPressed: {
-    opacity: 0.6,
-  },
-  headerBtnLabel: {
-    color: '#208AEF',
-    fontWeight: '600',
-  },
+  btnPressed: { opacity: 0.6 },
+  headerBtnLabel: { color: Colors.dark.accent },
+
   center: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: Spacing.four,
   },
+  errorCard: {
+    backgroundColor: Colors.dark.dangerSoft,
+    borderRadius: Radius.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(248,81,73,0.3)',
+    margin: Spacing.four,
+  },
+  errorTitle: { color: Colors.dark.text },
+
+  // Empty state
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.five,
+  },
+  emptyEmoji: { fontSize: 48, lineHeight: 56 },
   emptyHeading: {
+    color: Colors.dark.text,
     textAlign: 'center',
-  },
-  emptyBody: {
-    textAlign: 'center',
-    maxWidth: 280,
-  },
-  muted: {
-    color: '#8b949e',
-  },
-  spacedTop: {
     marginTop: Spacing.three,
   },
-  button: {
-    backgroundColor: '#208AEF',
-    paddingHorizontal: Spacing.four,
+  emptyBody: { textAlign: 'center', maxWidth: 280, lineHeight: 20 },
+
+  // Buttons
+  primaryBtn: {
+    backgroundColor: Colors.dark.accent,
+    paddingHorizontal: Spacing.five,
     paddingVertical: Spacing.three,
-    borderRadius: 8,
+    borderRadius: Radius.chip,
   },
+  primaryBtnLabel: { color: '#fff' },
   retry: {
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.two,
-    borderRadius: 8,
+    borderRadius: Radius.chip,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#30363d',
+    borderColor: Colors.dark.border,
   },
+  retryLabel: { color: Colors.dark.text },
+
+  // List
   listContent: {
     paddingHorizontal: Spacing.four,
     paddingBottom: Spacing.four,
@@ -265,39 +296,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.three,
   },
-  rowMainPressed: {
-    opacity: 0.6,
-  },
+  rowMainPressed: { opacity: 0.6 },
   avatar: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: '#21262d',
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.dark.raised,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.dark.border,
   },
-  rowText: {
-    flex: 1,
-  },
-  login: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  rowText: { flex: 1 },
+  login: { color: Colors.dark.text, fontFamily: 'monospace' },
+  metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+  metaOn: { color: Colors.dark.success },
+  metaOff: { color: Colors.dark.faint },
+  muted: { color: Colors.dark.muted },
+  spacedTop: { marginTop: Spacing.three },
+
   sep: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: '#21262d',
+    backgroundColor: Colors.dark.border,
   },
   removeBtn: {
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
-    borderRadius: 8,
+    borderRadius: Radius.chip,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#30363d',
+    borderColor: Colors.dark.border,
   },
-  removeBtnPressed: {
-    backgroundColor: '#161b22',
-  },
-  removeLabel: {
-    color: '#8b949e',
-    fontSize: 12,
-    fontWeight: '600',
-  },
+  removeBtnPressed: { backgroundColor: Colors.dark.surface },
+  removeLabel: { color: Colors.dark.muted },
 });

@@ -40,7 +40,7 @@ import type { TrackedRepo } from '@/lib/firebase-repos';
 import type { StreakSnapshot } from '@/lib/account-types';
 import { GitHubApiError, listMyRepos, type GitHubRepo } from '@/lib/github-api';
 import { formatShareMessage } from '@/lib/streak';
-import { Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 
 type LoadState = 'loading' | 'ready' | 'error';
 
@@ -301,7 +301,10 @@ export default function ReposScreen() {
   if (loading || !profileLoaded) {
     return (
       <ThemedView style={styles.full}>
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color={Colors.dark.accent} />
+        <ThemedText type="small" style={styles.muted}>
+          Setting up your dashboard…
+        </ThemedText>
       </ThemedView>
     );
   }
@@ -310,13 +313,14 @@ export default function ReposScreen() {
   return (
     <ThemedView style={styles.full}>
       <SafeAreaView style={styles.safe}>
+        {/* App header — "CodeTrail" + handle + icon buttons */}
         <View style={styles.header}>
           <View style={styles.headerText}>
-            <ThemedText type="title" style={styles.heading}>
-              You shipped.
+            <ThemedText type="h1" style={styles.heading}>
+              CodeTrail
             </ThemedText>
             <ThemedText type="small" style={styles.muted}>
-              Hi, {user?.displayName || user?.email || userProfile?.login}.
+              @{userProfile?.login ?? user?.email ?? 'you'}
             </ThemedText>
           </View>
           <View style={styles.headerActions}>
@@ -324,20 +328,20 @@ export default function ReposScreen() {
               onPress={() => router.push('/friends')}
               accessibilityRole="button"
               accessibilityLabel="Friends"
-              style={styles.headerButton}
+              style={({ pressed }) => [styles.iconBtn, pressed && styles.btnPressed]}
             >
-              <ThemedText type="small" style={styles.muted}>
-                Friends
+              <ThemedText type="bodyBold" style={styles.iconBtnLabel}>
+                👥
               </ThemedText>
             </Pressable>
             <Pressable
               onPress={signOut}
               accessibilityRole="button"
               accessibilityLabel="Sign out"
-              style={styles.headerButton}
+              style={({ pressed }) => [styles.iconBtn, pressed && styles.btnPressed]}
             >
-              <ThemedText type="small" style={styles.muted}>
-                Sign out
+              <ThemedText type="bodyBold" style={styles.iconBtnLabel}>
+                ⏻
               </ThemedText>
             </Pressable>
           </View>
@@ -345,19 +349,24 @@ export default function ReposScreen() {
 
         {trackedState === 'loading' ? (
           <View style={styles.center}>
-            <ActivityIndicator />
+            <ActivityIndicator color={Colors.dark.accent} />
             <ThemedText type="small" style={[styles.muted, styles.spacedTop]}>
               Loading your projects…
             </ThemedText>
           </View>
         ) : trackedState === 'error' ? (
-          <View style={styles.center}>
-            <ThemedText type="smallBold">Could not load your projects.</ThemedText>
+          <View style={[styles.center, styles.errorCard]}>
+            <ThemedText type="smallBold" style={styles.errorTitle}>
+              Could not load your projects
+            </ThemedText>
             <ThemedText type="small" style={[styles.muted, styles.spacedTop]}>
               {trackedError}
             </ThemedText>
-            <Pressable onPress={reloadTracked} style={styles.button}>
-              <ThemedText type="smallBold">Try again</ThemedText>
+            <Pressable
+              onPress={reloadTracked}
+              style={({ pressed }) => [styles.retry, pressed && styles.btnPressed, styles.spacedTop]}
+            >
+              <ThemedText type="smallBold" style={styles.retryLabel}>Try again</ThemedText>
             </Pressable>
           </View>
         ) : tracked.length === 0 ? (
@@ -367,22 +376,30 @@ export default function ReposScreen() {
               noTrackedRepos={true}
               onShare={handleShare}
             />
-            <View style={[styles.spacedTop]}>
+            <View style={styles.spacedTop}>
               <FeedSection
                 state={feedSectionState}
                 onRefresh={refreshFeed}
                 onRetry={refreshFeed}
               />
             </View>
-            <View style={styles.center}>
-              <ThemedText type="subtitle" style={styles.emptyHeading}>
+            <View style={styles.emptyState}>
+              <ThemedText style={styles.emptyEmoji} accessibilityElementsHidden>
+                ✨
+              </ThemedText>
+              <ThemedText type="h2" style={styles.emptyHeading}>
                 Pick your projects
               </ThemedText>
-              <ThemedText type="default" style={[styles.muted, styles.spacedTop]}>
-                We will track your streak on the repos you choose. No judgment, just momentum.
+              <ThemedText type="small" style={[styles.muted, styles.spacedTop, styles.emptyBody]}>
+                We track your streak on the repos you choose. No judgment, just momentum.
               </ThemedText>
-              <Pressable onPress={openPicker} style={[styles.button, styles.spacedTop]}>
-                <ThemedText type="smallBold">Browse your projects</ThemedText>
+              <Pressable
+                onPress={openPicker}
+                style={({ pressed }) => [styles.primaryBtn, pressed && styles.btnPressed, styles.spacedTop]}
+              >
+                <ThemedText type="smallBold" style={styles.primaryBtnLabel}>
+                  Browse your projects
+                </ThemedText>
               </Pressable>
             </View>
           </>
@@ -405,17 +422,29 @@ export default function ReposScreen() {
                       onRetry={refreshFeed}
                     />
                   </View>
-                  <ThemedText type="default" style={[styles.muted, styles.spacedTop, styles.listHeader]}>
-                    Tracked projects
+                  <ThemedText type="h3" style={[styles.trackedHeader, styles.spacedTop]}>
+                    Tracking
+                    <ThemedText type="body" style={styles.trackedCount}>
+                      {' '}{tracked.length}
+                    </ThemedText>
                   </ThemedText>
                 </View>
               }
               renderItem={({ item }) => (
                 <View style={styles.trackedRow}>
-                  <ThemedText type="smallBold">{item.name}</ThemedText>
-                  <ThemedText type="small" style={styles.muted}>
-                    {item.language ?? '—'} · ⭐ {item.stars}
-                  </ThemedText>
+                  <View style={styles.trackedIcon}>
+                    <ThemedText type="bodyBold" style={styles.trackedIconLabel}>
+                      ⌥
+                    </ThemedText>
+                  </View>
+                  <View style={styles.trackedText}>
+                    <ThemedText type="bodyBold" style={styles.trackedName}>
+                      {item.name}
+                    </ThemedText>
+                    <ThemedText type="tiny" style={styles.trackedMeta}>
+                      {item.language ?? '—'} · ⭐ {item.stars}
+                    </ThemedText>
+                  </View>
                 </View>
               )}
               ItemSeparatorComponent={() => <View style={styles.separator} />}
@@ -424,16 +453,18 @@ export default function ReposScreen() {
                 <RefreshControl
                   refreshing={refreshing}
                   onRefresh={onRefresh}
-                  tintColor="#8b949e"
+                  tintColor={Colors.dark.muted}
                 />
               }
             />
             <Pressable
               onPress={openPicker}
-              style={[styles.button, styles.spacedTop]}
+              style={({ pressed }) => [styles.addRepoBtn, pressed && styles.btnPressed]}
               accessibilityRole="button"
             >
-              <ThemedText type="smallBold">Add or remove projects</ThemedText>
+              <ThemedText type="smallBold" style={styles.addRepoLabel}>
+                + Add or remove projects
+              </ThemedText>
             </Pressable>
           </>
         )}
@@ -461,39 +492,32 @@ export default function ReposScreen() {
 }
 
 const styles = StyleSheet.create({
-  full: {
-    flex: 1,
-  },
-  safe: {
-    flex: 1,
-    padding: Spacing.four,
-  },
+  full: { flex: 1 },
+  safe: { flex: 1, padding: Spacing.four },
+
+  // App header
   header: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: Spacing.four,
-  },
-  headerText: {
-    flex: 1,
-    gap: Spacing.one,
-  },
-  headerActions: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.two,
+    justifyContent: 'space-between',
+    marginBottom: Spacing.five,
   },
-  headerButton: {
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.two,
+  headerText: { flex: 1, gap: 2 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one },
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: Radius.chip,
+    backgroundColor: Colors.dark.raised,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  heading: {
-    fontSize: 32,
-    lineHeight: 36,
-  },
-  muted: {
-    opacity: 0.7,
-  },
+  iconBtnLabel: { color: Colors.dark.text, fontSize: 18 },
+  btnPressed: { opacity: 0.6 },
+  heading: { color: Colors.dark.text, letterSpacing: -0.4 },
+  muted: { color: Colors.dark.muted },
+
+  // States
   center: {
     flex: 1,
     alignItems: 'center',
@@ -501,32 +525,83 @@ const styles = StyleSheet.create({
     padding: Spacing.five,
     gap: Spacing.two,
   },
-  emptyHeading: {
-    textAlign: 'center',
+  errorCard: {
+    backgroundColor: Colors.dark.dangerSoft,
+    borderRadius: Radius.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(248,81,73,0.3)',
+    margin: Spacing.three,
   },
-  spacedTop: {
-    marginTop: Spacing.three,
-  },
-  button: {
-    paddingVertical: Spacing.three,
+  errorTitle: { color: Colors.dark.text },
+  retry: {
     paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.two,
+    borderRadius: Radius.chip,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.dark.border,
   },
+  retryLabel: { color: Colors.dark.text },
+
+  // Empty state
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: Spacing.seven,
+    paddingHorizontal: Spacing.five,
+  },
+  emptyEmoji: { fontSize: 48, lineHeight: 56 },
+  emptyHeading: { color: Colors.dark.text, textAlign: 'center' },
+  emptyBody: { textAlign: 'center', maxWidth: 280, lineHeight: 20 },
+
+  // Buttons
+  primaryBtn: {
+    backgroundColor: Colors.dark.accent,
+    paddingVertical: Spacing.three,
+    paddingHorizontal: Spacing.five,
+    borderRadius: Radius.chip,
+  },
+  primaryBtnLabel: { color: '#fff' },
+  addRepoBtn: {
+    backgroundColor: Colors.dark.accentSoft,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.dark.accent,
+    borderStyle: 'dashed',
+    borderRadius: Radius.card,
+    paddingVertical: Spacing.three,
+    alignItems: 'center',
+    marginTop: Spacing.four,
+  },
+  addRepoLabel: { color: Colors.dark.accent },
+
+  // Tracked repos list
+  dashboardWrap: { marginBottom: Spacing.three },
+  trackedHeader: {
+    color: Colors.dark.text,
+    marginBottom: Spacing.three,
+  },
+  trackedCount: { color: Colors.dark.muted, fontWeight: '500' },
   trackedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: Spacing.three,
     paddingHorizontal: Spacing.two,
+    gap: Spacing.three,
   },
+  trackedIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: Radius.chip,
+    backgroundColor: Colors.dark.raised,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  trackedIconLabel: { color: Colors.dark.muted, fontSize: 16 },
+  trackedText: { flex: 1 },
+  trackedName: { color: Colors.dark.text, fontFamily: 'monospace' },
+  trackedMeta: { color: Colors.dark.muted, fontFamily: 'monospace', marginTop: 2 },
   separator: {
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: Colors.dark.border,
   },
-  listContent: {
-    paddingBottom: Spacing.three,
-  },
-  dashboardWrap: {
-    marginBottom: Spacing.four,
-  },
-  listHeader: {
-    marginTop: Spacing.four,
-    marginBottom: Spacing.two,
-  },
+  listContent: { paddingBottom: Spacing.seven },
+  spacedTop: { marginTop: Spacing.four },
 });
