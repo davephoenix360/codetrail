@@ -125,6 +125,55 @@ export function useAuth() {
     };
   }, [user]);
 
+  // Self-heal the public usersByLogin index. The auth-callback writes
+  // this doc on sign-in, but users who signed in BEFORE that write was
+  // added (commit 58efcf2) never got one. Without it, the add-friend
+  // flow can't resolve "is @davephoenix360 on CodeTrail?" and the
+  // friend's `isOnCodeTrail` flag gets set to false.
+  //
+  // This effect runs after the profile loads and writes the doc if
+  // it's missing. Idempotent: setDoc with merge:true is a no-op when
+  // the doc already exists. Best-effort: errors are swallowed so a
+  // non-critical index never breaks the app.
+  //
+  // The dep is keyed on `login` so a Firestore update that changes
+  // other fields (streak data, last seen, etc.) doesn't re-trigger
+  // the write. Login only changes on actual account switch.
+  useEffect(() => {
+    const profile = userProfile;
+    if (!profile?.login || !profile?.uid || !profile?.avatarUrl) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        await setDoc(
+          doc(db, 'usersByLogin', profile.login.toLowerCase()),
+          {
+            uid: profile.uid,
+            login: profile.login,
+            avatarUrl: profile.avatarUrl,
+            addedAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
+        if (!cancelled && __DEV__) {
+          console.log('[useAuth] usersByLogin ensured for', profile.login);
+        }
+      } catch (e) {
+        // Non-fatal. A missing or stale index just means the add-friend
+        // lookup returns "not on CodeTrail" for us. The user can sign
+        // out and back in to retry, or an admin can repair manually.
+        if (__DEV__) {
+          console.warn('[useAuth] self-heal usersByLogin failed (non-fatal):', e);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userProfile?.login, userProfile?.uid, userProfile?.avatarUrl]);
+
   /**
    * Reload the user profile from Firestore. Call after any profile
    * mutation (sign-in that wrote the profile, sign-out, etc.) to keep

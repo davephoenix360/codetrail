@@ -195,6 +195,13 @@ export async function addFriend(
 /**
  * List the current user's friends, sorted by `addedAt` descending
  * (newest first).
+ *
+ * Also reconciles stale `isOnCodeTrail` flags: for each friend stored
+ * as off-CodeTrail, we re-check the public `usersByLogin` index. If
+ * they signed up for CodeTrail since being added (or if they were
+ * added before their `usersByLogin` doc was written), we update the
+ * friend doc in place and return the up-to-date list. Best-effort:
+ * a failed lookup leaves the friend flagged as off-platform.
  */
 export async function listFriends(uid: string): Promise<Friend[]> {
   const q = query(
@@ -202,7 +209,64 @@ export async function listFriends(uid: string): Promise<Friend[]> {
     orderBy('addedAt', 'desc'),
   );
   const snap = await getDocs(q);
-  return snap.docs.map((d) => friendFromDoc(d.id, d.data() as FriendDocRaw));
+  const list = snap.docs.map((d) => friendFromDoc(d.id, d.data() as FriendDocRaw));
+  return await reconcileFriendIndex(uid, list);
+}
+
+/**
+ * For each friend stored as off-CodeTrail, re-check the public
+ * `usersByLogin` index and upgrade them in Firestore + the returned
+ * list if they've since signed up. Friends already flagged as
+ * on-CodeTrail are returned unchanged. Best-effort: errors are
+ * swallowed so a single broken lookup doesn't fail the whole list.
+ */
+async function reconcileFriendIndex(uid: string, friends: Friend[]): Promise<Friend[]> {
+  const offPlatform = friends.filter((f) => !f.isOnCodeTrail);
+  if (offPlatform.length === 0) return friends;
+
+  const upgrades = await Promise.all(
+    offPlatform.map(async (friend) => {
+      try {
+        const friendUid = await lookupCodeTrailUidByLogin(friend.login);
+        if (!friendUid) return null;
+        const friendRef = doc(db, 'users', uid, 'friends', String(friend.githubId));
+        await setDoc(
+          friendRef,
+          { isOnCodeTrail: true, friendUid },
+          { merge: true },
+        );
+        if (__DEV__) {
+          console.log(
+            '[firebase-friends] reconciled @' + friend.login + ' → on CodeTrail',
+          );
+        }
+        return { friend, friendUid };
+      } catch (e) {
+        if (__DEV__) {
+          console.warn(
+            '[firebase-friends] reconcile lookup failed for @' + friend.login + ':',
+            e,
+          );
+        }
+        return null;
+      }
+    }),
+  );
+
+  if (upgrades.every((u) => u === null)) return friends;
+
+  // Build a new list with the upgrades applied.
+  const upgradedLogins = new Map(
+    upgrades.filter((u): u is { friend: Friend; friendUid: string } => u !== null)
+      .map((u) => [u.friend.login, u.friendUid]),
+  );
+  return friends.map((f) => {
+    const newUid = upgradedLogins.get(f.login);
+    if (newUid) {
+      return { ...f, isOnCodeTrail: true, friendUid: newUid };
+    }
+    return f;
+  });
 }
 
 /**
