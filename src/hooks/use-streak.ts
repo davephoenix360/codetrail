@@ -11,13 +11,32 @@
  *   2. If repos.length === 0: short-circuit to 'idle'. The user
  *      hasn't tracked anything yet; no streak to compute.
  *   3. `refresh()` always re-computes from GitHub (used by pull-to-
- *      refresh on /repos).
+ *      refresh on /repos) — the cache is bypassed on forced refresh
+ *      because the user explicitly asked for fresh data.
  *
  * For NEW users, the stored streak is 0 / streakData is null. The
  * auth-callback initializes these on sign-up so the dashboard
  * renders "🔥 0" instantly with no API call.
+ *
+ * ### Effect-dep hygiene
+ *
+ * `onUpdate` and the stored cache data are passed in by the caller
+ * and are typically new references on every render (`onUpdate` is
+ * usually an inline arrow; `storedStreakData` is a sub-object of a
+ * Firestore snapshot that gets replaced whenever the profile
+ * updates). Including them in the effect's dep array would cause an
+ * infinite loop:
+ *
+ *   render → new `onUpdate` ref → effect fires → setState → render
+ *   → new `onUpdate` ref → effect fires → ...
+ *
+ * We stash both in refs and update the refs on every render, so the
+ * effect always reads the latest values when it fires, but the
+ * effect's identity stays stable. The effect's deps are only the
+ * things that should *cause* a re-fetch: `accessToken`, `login`,
+ * `repos`, and the `refreshTick` counter.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { GitHubApiError } from '@/lib/github-api';
 import { loadStreak, type StreakResult } from '@/lib/streak';
@@ -111,6 +130,18 @@ export function useStreak({
   // Bumped to force a re-fetch (used by refresh()).
   const [refreshTick, setRefreshTick] = useState(0);
 
+  // Stash volatile inputs in refs. The parent typically passes
+  // onUpdate as an inline arrow and storedStreakData as a sub-object
+  // of a Firestore snapshot — both are new references on every render
+  // even when the underlying value didn't change. If we put them in
+  // the effect's deps, the effect re-fires on every render and we get
+  // "Maximum update depth exceeded". The refs let the effect read the
+  // latest values without re-firing.
+  const onUpdateRef = useRef(onUpdate);
+  onUpdateRef.current = onUpdate;
+  const cacheRef = useRef({ storedStreakData, storedStreakUpdatedAt });
+  cacheRef.current = { storedStreakData, storedStreakUpdatedAt };
+
   const refresh = useCallback(() => {
     setRefreshTick((t) => t + 1);
   }, []);
@@ -128,26 +159,30 @@ export function useStreak({
       return;
     }
 
-    // CACHE PATH: if we have a recent snapshot, use it directly. No
-    // API call. The dashboard renders instantly. This is the main
-    // optimization the new storage layer enables.
-    if (storedStreakData && isCacheFresh(storedStreakUpdatedAt)) {
-      if (__DEV__) {
-        console.log('[useStreak] cache hit', {
-          streak: storedStreakData.streak,
-          updatedAt: storedStreakUpdatedAt,
+    // CACHE PATH: if this is NOT a forced refresh, try the cache.
+    // On refreshTick > 0 the user explicitly asked for fresh data, so
+    // skip the cache and recompute from GitHub. Otherwise the cache is
+    // still valid (just written by us, or recently persisted) — no
+    // point in hitting the API again.
+    if (refreshTick === 0) {
+      const { storedStreakData: cache, storedStreakUpdatedAt: updatedAt } = cacheRef.current;
+      if (cache && isCacheFresh(updatedAt)) {
+        if (__DEV__) {
+          console.log('[useStreak] cache hit', {
+            streak: cache.streak,
+            updatedAt,
+          });
+        }
+        setState({
+          status: 'ready',
+          data: snapshotToResult(cache),
+          fromCache: true,
         });
+        return;
       }
-      setState({
-        status: 'ready',
-        data: snapshotToResult(storedStreakData),
-        fromCache: true,
-      });
-      return;
     }
 
-    // COMPUTE PATH: cache missing or stale. Hit GitHub.
-    // (We still need an accessToken for the GitHub API call.)
+    // COMPUTE PATH: cache missing or stale (or forced refresh). Hit GitHub.
     if (!accessToken) {
       setState({ status: 'idle' });
       return;
@@ -160,8 +195,8 @@ export function useStreak({
         const data = await loadStreak(accessToken, login, repos, { signal: ac.signal });
         if (ac.signal.aborted) return;
         setState({ status: 'ready', data, fromCache: false });
-        if (onUpdate) {
-          onUpdate(resultToSnapshot(data));
+        if (onUpdateRef.current) {
+          onUpdateRef.current(resultToSnapshot(data));
         }
       } catch (e) {
         if (ac.signal.aborted) return;
@@ -177,7 +212,7 @@ export function useStreak({
     })();
 
     return () => ac.abort();
-  }, [accessToken, login, repos, refreshTick, storedStreakData, storedStreakUpdatedAt, onUpdate]);
+  }, [accessToken, login, repos, refreshTick]);
 
   return { state, refresh };
 }

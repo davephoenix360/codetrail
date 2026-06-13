@@ -37,6 +37,7 @@ import { useFeed } from '@/hooks/use-feed';
 import { useStreak } from '@/hooks/use-streak';
 import { listTrackedRepos, trackRepo, untrackRepo } from '@/lib/firebase-repos';
 import type { TrackedRepo } from '@/lib/firebase-repos';
+import type { StreakSnapshot } from '@/lib/account-types';
 import { GitHubApiError, listMyRepos, type GitHubRepo } from '@/lib/github-api';
 import { formatShareMessage } from '@/lib/streak';
 import { Spacing } from '@/constants/theme';
@@ -68,17 +69,30 @@ export default function ReposScreen() {
   // Streak dashboard. Uses the stored streak cache (on the user profile)
   // if it's recent (< 1 hour) — instant render, no API call. Otherwise
   // computes via loadStreak and writes back to Firestore for next time.
+  //
+  // onUpdate is memoized with useCallback so the useStreak effect's
+  // dep array sees a stable reference. Without this, every render of
+  // ReposScreen creates a new arrow → useStreak effect re-fires on
+  // every render → setState → re-render → infinite loop ("Maximum
+  // update depth exceeded"). The hook also defensively stashes
+  // onUpdate in a ref, but the explicit memoization here makes the
+  // intent obvious to the next reader.
+  const handleStreakUpdate = useCallback(
+    (snapshot: StreakSnapshot) => {
+      // Fire-and-forget write to Firestore. The hook continues
+      // regardless; next mount will pick up the cached value.
+      void updateStreak(snapshot);
+    },
+    [updateStreak],
+  );
+
   const { state: streakState, refresh: refreshStreak } = useStreak({
     accessToken: githubAccessToken,
     login: userProfile?.login ?? null,
     repos: tracked,
     storedStreakData: userProfile?.streakData ?? null,
     storedStreakUpdatedAt: userProfile?.streakUpdatedAt ?? null,
-    onUpdate: (snapshot) => {
-      // Fire-and-forget write to Firestore. The hook continues
-      // regardless; next mount will pick up the cached value.
-      void updateStreak(snapshot);
-    },
+    onUpdate: handleStreakUpdate,
   });
 
   // Friends + activity feed (Phase 3).
