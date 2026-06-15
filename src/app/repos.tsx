@@ -25,6 +25,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 
 import { RepoPicker } from '@/components/repo-picker';
 import { StreakSection } from '@/components/streak-section';
@@ -340,9 +341,7 @@ export default function ReposScreen() {
               accessibilityLabel="Sign out"
               style={({ pressed }) => [styles.iconBtn, pressed && styles.btnPressed]}
             >
-              <ThemedText type="bodyBold" style={styles.iconBtnLabel}>
-                ⏻
-              </ThemedText>
+              <Ionicons name="log-out-outline" size={18} color={Colors.dark.text} />
             </Pressable>
           </View>
         </View>
@@ -433,9 +432,7 @@ export default function ReposScreen() {
               renderItem={({ item }) => (
                 <View style={styles.trackedRow}>
                   <View style={styles.trackedIcon}>
-                    <ThemedText type="bodyBold" style={styles.trackedIconLabel}>
-                      ⌥
-                    </ThemedText>
+                    <Ionicons name="logo-github" size={16} color={Colors.dark.muted} />
                   </View>
                   <View style={styles.trackedText}>
                     <ThemedText type="bodyBold" style={styles.trackedName}>

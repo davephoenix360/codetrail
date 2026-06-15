@@ -20,6 +20,7 @@
  */
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 
 import { ThemedText } from './themed-text';
 import { FeedEntry } from './feed-entry';
@@ -157,9 +158,12 @@ export function FeedSection({ state, onRefresh, onRetry }: Props) {
           style={({ pressed }) => [styles.refreshBtn, pressed && styles.btnPressed]}
         >
           {state.stale ? (
-            <ThemedText type="smallBold" style={styles.refreshLabel}>
-              ↻ Refresh
-            </ThemedText>
+            <>
+              <Ionicons name="refresh-outline" size={14} color={Colors.dark.accent} />
+              <ThemedText type="smallBold" style={[styles.refreshLabel, { marginLeft: 4 }]}>
+                Refresh
+              </ThemedText>
+            </>
           ) : (
             <ActivityIndicator color={Colors.dark.accent} size="small" />
           )}
