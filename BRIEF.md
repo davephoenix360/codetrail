@@ -2,9 +2,9 @@
 
 > **One-liner:** A mobile app that turns your GitHub repos into a Duolingo-style learning streak. Pick projects to track, ship daily progress, see your friends' projects, get help when stuck.
 
-> **Status:** Phase 1 (auth) + Phase 2 (repo picker) complete as of 2026-06-11. Next: Phase 2.5 (multi-account foundation) → Phase 2.6 (personal dashboard with streak counter).
+> **Status:** Phase 1 (auth) + Phase 2 (repo picker) + Phase 2.6 (streak dashboard) + Phase 3 (friends: lookup, list, activity feed) complete as of 2026-06-14. Multi-account (Phase 2.5) was built then collapsed on 2026-06-12 to single-account MVP — see decisions log. Remaining MVP gaps: push notifications, help request. See "Sub-phase log" below for the actual sub-phasing vs the original roadmap.
 
-> **Last touched:** 2026-06-11
+> **Last touched:** 2026-06-14
 
 ## The pitch
 
@@ -71,13 +71,13 @@ For self-taught engineers, bootcamp students, and CS undergrads working on side 
 
 ## Status
 
-- [x] Idea articulated (today)
-- [x] Competitive landscape researched (today)
-- [x] Tech stack recommendation drafted (today)
-- [ ] Project name picked
-- [ ] GitHub repo created
-- [ ] MVP scope frozen
-- [ ] First commit
+- [x] Idea articulated (2026-06-10)
+- [x] Competitive landscape researched (2026-06-10)
+- [x] Tech stack recommendation drafted (2026-06-10)
+- [x] Project name picked: **CodeTrail** (locked 2026-06-10, ticked here 2026-06-14)
+- [x] GitHub repo created: `davephoenix360/codetrail` (2026-06-10)
+- [x] MVP scope frozen: 9 features above, with multi-account collapsed to single-account on 2026-06-12
+- [x] First commit: Phase 0 skeleton landed 2026-06-10
 - [ ] First TestFlight / Play internal build
 - [ ] First 10 beta testers
 
@@ -204,6 +204,22 @@ For self-taught engineers, bootcamp students, and CS undergrads working on side 
 - **Honest meta:** A solo mobile app is a 3-6 month project, not a weekend. If BESA / Dayforce / job search is hot, park this. Re-read this doc in August and decide.
 - **The hype-man tone is the moat.** If we get one thing right, get this right. Every notification copy, every error message, every empty state — all hype-man, all supportive. This is the differentiator from Coddy, from Habitica, from every other guilt-trip-streak app.
 
+## Sub-phase log (actual work since 2026-06-12)
+
+The phase numbers in commit messages (Phase 2.5, 2.6, 3) don't match the original roadmap's Phase 3 (v2.0 features). This table is the mapping, in chronological order:
+
+| Sub-phase | What it is | Original-roadmap phase | Status |
+|---|---|---|---|
+| 2.5 | Multi-account foundation (link/unlink, primary, `githubAccounts` index) | Phase 1, feature #2 (deferred component) | **Built then collapsed on 2026-06-12.** Code is in git history (`oauth-with-linked-accounts` skill). MVP is single-account. Revisit in v2.0. |
+| 2.6 | Personal dashboard — current streak, weekly commits, 2-day grace, "Share your streak" | Phase 1, feature #4 | ✅ Done (2026-06-12). Streak cache on user profile. |
+| 2.6.x | Brand system v1.0 applied across `/repos` | Phase 2 polish | ✅ Done (2026-06-13). Source of truth: `design-drafts/BRAND.md`. |
+| 3 (friends) | Friend system, `usersByLogin` lookup index, activity feed, on-CodeTrail filter | Phase 1, features #5 + #6 | ✅ Done (2026-06-12 to 2026-06-13). Earliest commit landed before the multi-account collapse, so the index name is `usersByLogin` (not the multi-account `githubAccounts`). |
+| 2.7 (next) | Daily push notifications in hype-man voice | Phase 1, feature #7 | ❌ Not started. **Biggest remaining MVP gap.** |
+| 2.8 (after) | Help request ("stuck on X" button on a project, posts to friends) | Phase 1, feature #9 → Phase 2 first-class | ❌ Not started. **The differentiator from the BRIEF.** |
+
+**Phase 2 (original roadmap)** = Polish + App Store submission. We're effectively doing it in parallel with Phase 1 features.
+**Phase 3 (original roadmap)** = v2.0 features (study groups, AI summaries, resource library). Untouched. Do NOT confuse with "Phase 3 (friends)" above.
+
 ## Decisions log
 
 | Date | Decision | By | Rationale |
@@ -221,3 +237,11 @@ For self-taught engineers, bootcamp students, and CS undergrads working on side 
 | 2026-06-11 | Firestore region = `us-central1` (Iowa), Standard edition | Diepreye | Cheapest tier, default for most Firebase services, sub-100ms latency to Edmonton. Chose over Montreal (`northamerica-northeast1`) for cost. Region is locked — any future Cloud Storage / Cloud Functions must match. |
 | 2026-06-11 | `githubAccounts/{githubId}` lookup index is **public-read** (MVP) | Diepreye + Hermes | Needed to detect "this GitHub account is already linked to someone" during the sign-in flow, which the user can't do without an auth session. Tradeoff: mild privacy risk (enumeration of GitHub ID → UID). Mitigated by GitHub's large ID space. **For v2.0, move the lookup to Cloudflare Worker with Firebase Admin SDK** (Option C in the Phase 2.5 plan) so the index is no longer public. See skill `oauth-with-linked-accounts`. |
 | 2026-06-11 | "First GitHub account to sign in = primary" rule | Diepreye | Simplest default that matches the user's mental model. Primary is mutable in Settings — the user can set any linked account as primary. |
+| 2026-06-12 | **2-day grace period** (replaces the spec's "streak freeze" counter for MVP) | Diepreye | 061c0e2 — auto-pause streak for 1 missed day, manual "forgot to push?" nudge. Friendlier than a counter (no paywall implication, fits the hype-man voice). The formal weekly-freeze counter is on the v2.0 list if we want it. |
+| 2026-06-12 | **Streak cache on user profile** (1hr TTL via `streakData` + `streakUpdatedAt` fields) | Diepreye | 0941eaf — every /repos mount was calling GitHub once per tracked repo. Caching the StreakResult on `users/{uid}` makes the dashboard render instantly. Pull-to-refresh bypasses the cache. |
+| 2026-06-12 | **Feed filters to on-CodeTrail friends only** via `isOnCodeTrail: bool` flag | Diepreye | 0941eaf — flag set true on first sign-in. Public-read `usersByLogin` index is the only way to resolve this from the client without admin SDK. Will move behind a Cloudflare Worker in v2.0 (same fix deferred for the old `githubAccounts` index). |
+| 2026-06-13 | **useStreak uses refs, not deps**, for `onUpdate` and `storedStreakData` | Diepreye (caught by) | d674876 — inline-arrow `onUpdate` + Firestore-snapshot sub-objects cause infinite render loops when put in the effect dep array. The fix is to stash in refs and read inside the effect. This is the same pattern as the nextep-ext `useStreak` bug. See skill `react-deps-infinite-loop`. |
+| 2026-06-13 | **Feed caps at 20 repos per friend** | Diepreye | 1d117dc — earlier the feed enumerated every public repo the friend had, blowing the GitHub rate budget. 20 is plenty for "what did they ship today?" and cuts API calls ~10×. |
+| 2026-06-13 | **Design system v1.0 locked** (`design-drafts/BRAND.md` = source of truth) | Diepreye + Hermes | b591eb2 + 9c36078 — applied tokens (color/type/spacing) and 8 component snippets across `/repos` and `/friends`. Future copy/screens must comply; PR checklist adds a "voice & tone" gate. |
+| 2026-06-14 | **firestore.rules updated for friends schema** (commits 575e3ac, in unpushed batch 061c0e2..b591eb2) | Diepreye | `usersByLogin/{login}` (public-read) + `users/{uid}/friends/{githubId}` (owner-only). **Reminder: rules file in repo ≠ rules deployed in Firebase Console.** The user has to paste this file to the console after each rules change (no `firebase-tools` CLI on hermesbox; `deploy-firestore.sh` on v2.0 backlog). |
+| 2026-06-14 | **MVP = 5/9 features done; 2 remaining** (push notifications, help request) | Diepreye + Hermes | Streak dashboard and friends feed shipped. MVP list above (9 features) is still the source of truth; no scope cuts. Push notifications = biggest remaining gap (the hype-man copy is the moat, and notifications are where the voice lives). Help request = the social-help differentiator from the BRIEF.
