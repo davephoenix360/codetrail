@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CodeTrail — /repos (redesign draft)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    /* === CodeTrail design tokens (inlined) === */
+    :root {
+      --color-bg: #0d1117;
+      --color-surface: #161b22;
+      --color-raised: #21262d;
+      --color-border: #30363d;
+      --color-border-strong: #484f58;
+      --color-text: #e6edf3;
+      --color-muted: #8b949e;
+      --color-faint: #6e7681;
+      --color-accent: #208AEF;
+      --color-accent-hover: #1f7ad6;
+      --color-accent-soft: rgba(32,138,239,0.12);
+      --color-fire-1: #f78166;
+      --color-fire-2: #db6d28;
+      --color-fire-soft: rgba(247,129,102,0.16);
+      --color-success: #3fb950;
+      --color-success-soft: rgba(63,185,80,0.12);
+      --color-warning: #d29922;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+      --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+      --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+      --r-chip: 6px; --r-card: 8px; --r-modal: 12px; --r-pill: 999px;
+      --shadow-1: 0 1px 2px rgba(0,0,0,0.4);
+      --shadow-2: 0 4px 12px rgba(0,0,0,0.5);
+      --shadow-glow: 0 0 0 3px rgba(32,138,239,0.25);
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      --d-fast: 150ms; --d-default: 200ms; --d-slow: 300ms; --d-celebrate: 400ms;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-sans);
+      color: var(--color-text);
+      background: var(--color-bg);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      min-height: 100vh;
+    }
+
+    /* === Phone frame (so it previews at the right aspect) === */
+    .phone {
+      max-width: 420px;
+      margin: 0 auto;
+      background: var(--color-bg);
+      min-height: 100vh;
+      padding-bottom: 80px;
+    }
+
+    /* === Header === */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--space-4) var(--space-4) var(--space-3);
+      border-bottom: 1px solid var(--color-border);
+    }
+    .header-title {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: var(--color-text);
+    }
+    .header-actions { display: flex; gap: var(--space-2); }
+    .icon-btn {
+      width: 36px; height: 36px;
+      background: transparent;
+      border: none;
+      border-radius: var(--r-chip);
+      color: var(--color-muted);
+      display: inline-flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      transition: background var(--d-fast) var(--ease-out), color var(--d-fast) var(--ease-out);
+    }
+    .icon-btn:hover { background: var(--color-raised); color: var(--color-text); }
+    .icon-btn:active { background: var(--color-border); }
+
+    /* === Main content === */
+    .content { padding: var(--space-5) var(--space-4); }
+
+    /* === Streak card === */
+    .streak-card {
+      background: linear-gradient(180deg, var(--color-fire-soft) 0%, var(--color-surface) 60%);
+      border: 1px solid var(--color-border);
+      border-radius: 12px;
+      padding: var(--space-5);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-4);
+      box-shadow: var(--shadow-1);
+    }
+    .streak-headline { display: flex; align-items: center; gap: var(--space-4); }
+    .streak-icon {
+      font-size: 56px;
+      line-height: 1;
+      filter: drop-shadow(0 0 16px rgba(247, 129, 102, 0.35));
+    }
+    .streak-number {
+      font-size: 56px;
+      font-weight: 700;
+      line-height: 1;
+      background: linear-gradient(180deg, var(--color-fire-1) 0%, var(--color-fire-2) 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.02em;
+    }
+    .streak-label {
+      font-size: 14px;
+      color: var(--color-muted);
+      margin-top: 2px;
+    }
+    .streak-meta {
+      display: flex;
+      gap: var(--space-4);
+      font-size: 12px;
+      color: var(--color-muted);
+      font-family: var(--font-mono);
+    }
+    .streak-meta-item { display: flex; align-items: center; gap: 6px; }
+
+    .streak-weekly {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+      height: 56px;
+      align-items: end;
+    }
+    .bar {
+      border-radius: 3px;
+      min-height: 4px;
+      transition: background var(--d-default) var(--ease-out);
+    }
+    .bar-0 { background: #161b22; }
+    .bar-1 { background: #0e4429; }
+    .bar-2 { background: #006d32; }
+    .bar-3 { background: #26a641; }
+    .bar-4 { background: #39d353; }
+    .bar-today { box-shadow: 0 0 0 2px var(--color-accent); }
+
+    .streak-day-labels {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      font-size: 11px;
+      color: var(--color-faint);
+      text-align: center;
+      font-family: var(--font-mono);
+      margin-top: 4px;
+    }
+
+    .streak-hint {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: var(--space-3);
+      background: rgba(210, 153, 34, 0.08);
+      border: 1px solid rgba(210, 153, 34, 0.3);
+      border-radius: var(--r-chip);
+      font-size: 13px;
+      color: var(--color-warning);
+    }
+    .streak-hint-icon { font-size: 16px; }
+
+    /* === Section header === */
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: var(--space-6) 0 var(--space-3);
+    }
+    .section-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--color-text);
+    }
+    .section-action {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--color-accent);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+    }
+    .section-action:hover { text-decoration: underline; }
+
+    /* === Tracked repos === */
+    .repo-list { display: flex; flex-direction: column; gap: var(--space-2); }
+    .repo-row {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      padding: var(--space-3);
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--r-card);
+      transition: background var(--d-fast) var(--ease-out);
+      cursor: pointer;
+    }
+    .repo-row:hover { background: var(--color-raised); }
+    .repo-icon {
+      width: 32px; height: 32px;
+      background: var(--color-raised);
+      border-radius: var(--r-chip);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--color-muted);
+      flex-shrink: 0;
+    }
+    .repo-text { flex: 1; min-width: 0; }
+    .repo-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--color-text);
+      font-family: var(--font-mono);
+    }
+    .repo-meta {
+      font-size: 12px;
+      color: var(--color-muted);
+      font-family: var(--font-mono);
+      margin-top: 2px;
+    }
+    .repo-check {
+      color: var(--color-success);
+      flex-shrink: 0;
+    }
+
+    .add-repo-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-2);
+      padding: var(--space-3);
+      background: var(--color-accent-soft);
+      border: 1px dashed var(--color-accent);
+      border-radius: var(--r-card);
+      color: var(--color-accent);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      transition: background var(--d-fast) var(--ease-out);
+    }
+    .add-repo-btn:hover { background: rgba(32,138,239,0.2); }
+
+    /* === Feed === */
+    .feed-section { margin-top: var(--space-2); }
+    .feed-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+    .feed-entry {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      padding: var(--space-3) 0;
+      border-bottom: 1px solid var(--color-border);
+    }
+    .feed-entry:last-child { border-bottom: none; }
+    .feed-avatar {
+      width: 36px; height: 36px;
+      border-radius: var(--r-pill);
+      border: 1px solid var(--color-border);
+      flex-shrink: 0;
+    }
+    .feed-body { flex: 1; min-width: 0; }
+    .feed-headline {
+      font-size: 14px;
+      color: var(--color-text);
+      line-height: 1.4;
+    }
+    .feed-login {
+      font-weight: 600;
+      color: var(--color-accent);
+      text-decoration: none;
+    }
+    .feed-login:hover { text-decoration: underline; }
+    .feed-verb { color: var(--color-muted); margin: 0 4px; }
+    .feed-target { color: var(--color-text); }
+    .feed-detail {
+      font-size: 12px;
+      color: var(--color-muted);
+      font-family: var(--font-mono);
+      margin-top: 2px;
+    }
+    .feed-badge {
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      background: var(--color-fire-soft);
+      color: var(--color-fire-1);
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: var(--r-pill);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    /* === State toggles (dev tool to view all states) === */
+    .state-toggles {
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      background: var(--color-raised);
+      border: 1px solid var(--color-border-strong);
+      border-radius: var(--r-card);
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 12px;
+      box-shadow: var(--shadow-2);
+      z-index: 100;
+    }
+    .state-toggles-title {
+      font-weight: 600;
+      color: var(--color-muted);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 4px 6px 2px;
+    }
+    .state-toggle {
+      background: transparent;
+      border: 1px solid var(--color-border);
+      border-radius: var(--r-chip);
+      color: var(--color-text);
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      text-align: left;
+      transition: all var(--d-fast) var(--ease-out);
+      font-family: var(--font-sans);
+    }
+    .state-toggle:hover { background: var(--color-border); }
+    .state-toggle.active {
+      background: var(--color-accent);
+      color: white;
+      border-color: var(--color-accent);
+    }
+
+    /* Hidden state classes — show only the active state */
+    .state-ready, .state-loading, .state-empty, .state-error,
+    .state-ready-flex, .state-loading-flex, .state-empty-flex, .state-error-flex { display: none; }
+    [data-state="ready"] .state-ready { display: block; }
+    [data-state="ready"] .state-ready-flex { display: flex; }
+    [data-state="loading"] .state-loading { display: block; }
+    [data-state="loading"] .state-loading-flex { display: flex; }
+    [data-state="empty"] .state-empty { display: block; }
+    [data-state="empty"] .state-empty-flex { display: flex; }
+    [data-state="error"] .state-error { display: block; }
+    [data-state="error"] .state-error-flex { display: flex; }
+
+    /* Loading skeleton */
+    .skeleton {
+      background: linear-gradient(90deg, var(--color-raised) 0%, var(--color-border) 50%, var(--color-raised) 100%);
+      background-size: 200% 100%;
+      animation: skeleton 1.5s infinite;
+      border-radius: 4px;
+    }
+    @keyframes skeleton {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: var(--space-7) var(--space-4);
+    }
+    .empty-emoji { font-size: 48px; line-height: 1; margin-bottom: var(--space-3); }
+    .empty-heading {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: var(--space-2);
+    }
+    .empty-sub {
+      font-size: 14px;
+      color: var(--color-muted);
+      max-width: 280px;
+      margin: 0 auto var(--space-4);
+      line-height: 1.5;
+    }
+
+    /* Error state */
+    .error-state {
+      background: rgba(248, 81, 73, 0.08);
+      border: 1px solid rgba(248, 81, 73, 0.3);
+      border-radius: var(--r-card);
+      padding: var(--space-4);
+      display: flex;
+      align-items: flex-start;
+      gap: var(--space-3);
+    }
+    .error-icon {
+      color: var(--color-danger);
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .error-body { flex: 1; }
+    .error-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--color-text);
+      margin-bottom: 4px;
+    }
+    .error-msg {
+      font-size: 13px;
+      color: var(--color-muted);
+    }
+    .error-retry {
+      background: transparent;
+      border: 1px solid var(--color-border);
+      color: var(--color-text);
+      padding: 6px 12px;
+      border-radius: var(--r-chip);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: var(--space-2);
+    }
+    .error-retry:hover { background: var(--color-raised); }
+
+    /* Tab bar (mobile bottom) */
+    .tab-bar {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      max-width: 420px;
+      margin: 0 auto;
+      background: var(--color-surface);
+      border-top: 1px solid var(--color-border);
+      display: flex;
+      padding: 8px 0;
+      padding-bottom: calc(8px + env(safe-area-inset-bottom, 0));
+    }
+    .tab {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      padding: 6px 0;
+      color: var(--color-faint);
+      background: none;
+      border: none;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .tab.active { color: var(--color-accent); }
+    .tab svg { width: 22px; height: 22px; }
+
+    @media (max-width: 440px) {
+      .state-toggles { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="phone" data-state="ready">
+    <!-- Header -->
+    <header class="header">
+      <h1 class="header-title">CodeTrail</h1>
+      <div class="header-actions">
+        <button class="icon-btn" aria-label="Friends">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </button>
+        <button class="icon-btn" aria-label="Settings">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="content">
+      <!-- === Streak card === -->
+      <section class="streak-card state-ready" aria-label="Streak dashboard">
+        <div class="streak-headline">
+          <div class="streak-icon" aria-hidden="true">🔥</div>
+          <div>
+            <div class="streak-number">7</div>
+            <div class="streak-label">day streak</div>
+          </div>
+        </div>
+        <div class="streak-meta">
+          <span class="streak-meta-item">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+            3 commits today
+          </span>
+          <span class="streak-meta-item">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+            Last shipped 2h ago
+          </span>
+        </div>
+        <div class="streak-weekly" aria-label="This week's commits">
+          <div class="bar bar-3" title="Mon: 5"></div>
+          <div class="bar bar-2" title="Tue: 2"></div>
+          <div class="bar bar-1" title="Wed: 1"></div>
+          <div class="bar bar-3" title="Thu: 4"></div>
+          <div class="bar bar-4" title="Fri: 8"></div>
+          <div class="bar bar-0" title="Sat: 0"></div>
+          <div class="bar bar-2 bar-today" title="Sun (today): 3"></div>
+        </div>
+        <div class="streak-day-labels" aria-hidden="true">
+          <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
+        </div>
+        <!-- Hint shown when in grace period (e.g. last shipped 1-2 days ago) -->
+        <div class="streak-hint">
+          <span class="streak-hint-icon" aria-hidden="true">🫠</span>
+          <span>Ship today to keep the streak going.</span>
+        </div>
+      </section>
+
+      <!-- Loading state for streak -->
+      <section class="streak-card state-loading" aria-label="Streak loading">
+        <div class="streak-headline">
+          <div class="skeleton" style="width:56px;height:56px;border-radius:50%;"></div>
+          <div>
+            <div class="skeleton" style="width:80px;height:48px;margin-bottom:8px;"></div>
+            <div class="skeleton" style="width:100px;height:14px;"></div>
+          </div>
+        </div>
+        <div class="skeleton" style="width:100%;height:14px;"></div>
+        <div class="streak-weekly">
+          <div class="skeleton" style="height:32px;"></div>
+          <div class="skeleton" style="height:48px;"></div>
+          <div class="skeleton" style="height:24px;"></div>
+          <div class="skeleton" style="height:40px;"></div>
+          <div class="skeleton" style="height:56px;"></div>
+          <div class="skeleton" style="height:16px;"></div>
+          <div class="skeleton" style="height:36px;"></div>
+        </div>
+      </section>
+
+      <!-- Empty state for streak (no repos) -->
+      <section class="streak-card state-empty" aria-label="Streak empty">
+        <div class="empty-state">
+          <div class="empty-emoji" aria-hidden="true">✨</div>
+          <h2 class="empty-heading">Welcome to CodeTrail</h2>
+          <p class="empty-sub">Pick the repos you want us to watch. We'll show you the streak, the week, and what your friends are shipping.</p>
+          <button class="add-repo-btn" style="max-width:280px;margin:0 auto;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            Add your first repo
+          </button>
+        </div>
+      </section>
+
+      <!-- Error state for streak -->
+      <section class="streak-card state-error" aria-label="Streak error">
+        <div class="error-state">
+          <svg class="error-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <div class="error-body">
+            <div class="error-title">Couldn't load your streak</div>
+            <div class="error-msg">Check your connection and try again.</div>
+            <button class="error-retry">Try again</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- === Tracked repos === -->
+      <div class="state-ready" style="margin: var(--space-6) 0 var(--space-3);">
+        <div class="section-head" style="margin: 0;">
+          <h2 class="section-title">Tracking <span style="color:var(--color-muted);font-weight:500;">3</span></h2>
+          <button class="section-action">Edit</button>
+        </div>
+      </div>
+
+      <section class="repo-list state-ready" aria-label="Tracked repos">
+        <a class="repo-row" href="#">
+          <div class="repo-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+          </div>
+          <div class="repo-text">
+            <div class="repo-name">codetrail</div>
+            <div class="repo-meta">3 commits today · last 2h ago</div>
+          </div>
+          <svg class="repo-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </a>
+        <a class="repo-row" href="#">
+          <div class="repo-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+          </div>
+          <div class="repo-text">
+            <div class="repo-name">portfolio-site</div>
+            <div class="repo-meta">1 commit today</div>
+          </div>
+          <svg class="repo-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </a>
+        <a class="repo-row" href="#">
+          <div class="repo-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+          </div>
+          <div class="repo-text">
+            <div class="repo-name">obsidian-vault</div>
+            <div class="repo-meta">no commits today</div>
+          </div>
+        </a>
+        <button class="add-repo-btn" type="button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          Add a repo
+        </button>
+      </section>
+
+      <!-- === Feed === -->
+      <div class="state-ready feed-section" style="margin: var(--space-6) 0 var(--space-3);">
+        <div class="section-head" style="margin: 0;">
+          <h2 class="section-title">Your friends' ships</h2>
+          <button class="section-action">View all</button>
+        </div>
+      </div>
+
+      <section class="feed-list state-ready" aria-label="Friends activity feed">
+        <article class="feed-entry">
+          <img class="feed-avatar" src="https://api.dicebear.com/7.x/avataaars/svg?seed=tino" alt="" />
+          <div class="feed-body">
+            <div class="feed-headline">
+              <a class="feed-login" href="#">@tino</a>
+              <span class="feed-verb">shipped</span>
+              <span class="feed-target">3 commits today</span>
+            </div>
+            <div class="feed-detail">
+              <span>codetrail</span>
+              <span style="margin:0 4px;">·</span>
+              <span>2h ago</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="feed-entry">
+          <img class="feed-avatar" src="https://api.dicebear.com/7.x/avataaars/svg?seed=sarah" alt="" />
+          <div class="feed-body">
+            <div class="feed-headline">
+              <a class="feed-login" href="#">@sarah_codes</a>
+              <span class="feed-verb">had a big day</span>
+            </div>
+            <div class="feed-detail">
+              <span>refactor-app</span>
+              <span style="margin:0 4px;">·</span>
+              <span>11 commits</span>
+              <span style="margin:0 4px;">·</span>
+              <span>5h ago</span>
+            </div>
+          </div>
+          <span class="feed-badge">🔥 Big day</span>
+        </article>
+
+        <article class="feed-entry">
+          <img class="feed-avatar" src="https://api.dicebear.com/7.x/avataaars/svg?seed=diego" alt="" />
+          <div class="feed-body">
+            <div class="feed-headline">
+              <a class="feed-login" href="#">@diego</a>
+              <span class="feed-verb">shipped</span>
+              <span class="feed-target">today</span>
+            </div>
+            <div class="feed-detail">
+              <span>cli-tools</span>
+              <span style="margin:0 4px;">·</span>
+              <span>1h ago</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="feed-entry" style="opacity:0.7;">
+          <img class="feed-avatar" src="https://api.dicebear.com/7.x/avataaars/svg?seed=akira" alt="" />
+          <div class="feed-body">
+            <div class="feed-headline">
+              <a class="feed-login" href="#">@akira</a>
+              <span class="feed-verb">is taking a breather</span>
+            </div>
+            <div class="feed-detail">
+              <span>last shipped 4 days ago</span>
+            </div>
+          </div>
+          <span aria-hidden="true">🌱</span>
+        </article>
+      </section>
+
+      <!-- Feed empty state (no friends on CodeTrail) -->
+      <section class="state-empty" style="margin-top: var(--space-3);">
+        <div class="empty-state">
+          <div class="empty-emoji" aria-hidden="true">👀</div>
+          <h2 class="empty-heading">Your friends' ships</h2>
+          <p class="empty-sub">None of your friends are on CodeTrail yet. Invite them so you can see their streaks too.</p>
+          <button class="add-repo-btn" style="max-width:240px;margin:0 auto;">
+            Invite a friend
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <!-- Bottom tab bar -->
+    <nav class="tab-bar" aria-label="Main navigation">
+      <button class="tab active" aria-current="page">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <span>Home</span>
+      </button>
+      <button class="tab">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+        <span>Friends</span>
+      </button>
+      <button class="tab">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>Settings</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- State toggle controls (dev affordance) -->
+  <div class="state-toggles" role="group" aria-label="View state">
+    <div class="state-toggles-title">View state</div>
+    <button class="state-toggle active" data-set-state="ready">Ready</button>
+    <button class="state-toggle" data-set-state="loading">Loading</button>
+    <button class="state-toggle" data-set-state="empty">Empty (no repos / no friends)</button>
+    <button class="state-toggle" data-set-state="error">Error</button>
+  </div>
+
+  <script>
+    const phone = document.querySelector('.phone');
+    const toggles = document.querySelectorAll('[data-set-state]');
+    toggles.forEach(t => t.addEventListener('click', () => {
+      const state = t.dataset.setState;
+      phone.setAttribute('data-state', state);
+      toggles.forEach(x => x.classList.toggle('active', x === t));
+    }));
+  </script>
+</body>
+</html>

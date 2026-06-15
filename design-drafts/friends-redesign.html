@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CodeTrail — /friends (redesign draft)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    /* === CodeTrail design tokens (inlined) === */
+    :root {
+      --color-bg: #0d1117;
+      --color-surface: #161b22;
+      --color-raised: #21262d;
+      --color-border: #30363d;
+      --color-border-strong: #484f58;
+      --color-text: #e6edf3;
+      --color-muted: #8b949e;
+      --color-faint: #6e7681;
+      --color-accent: #208AEF;
+      --color-accent-hover: #1f7ad6;
+      --color-accent-soft: rgba(32,138,239,0.12);
+      --color-fire-1: #f78166;
+      --color-fire-2: #db6d28;
+      --color-fire-soft: rgba(247,129,102,0.16);
+      --color-success: #3fb950;
+      --color-success-soft: rgba(63,185,80,0.12);
+      --color-warning: #d29922;
+      --color-danger: #f85149;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+      --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+      --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+      --r-chip: 6px; --r-card: 8px; --r-modal: 12px; --r-pill: 999px;
+      --shadow-1: 0 1px 2px rgba(0,0,0,0.4);
+      --shadow-2: 0 4px 12px rgba(0,0,0,0.5);
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      --d-fast: 150ms; --d-default: 200ms;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-sans);
+      color: var(--color-text);
+      background: var(--color-bg);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .phone {
+      max-width: 420px;
+      margin: 0 auto;
+      background: var(--color-bg);
+      min-height: 100vh;
+      padding-bottom: 80px;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--space-4);
+      border-bottom: 1px solid var(--color-border);
+    }
+    .header-title {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .add-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--color-accent-soft);
+      color: var(--color-accent);
+      border: none;
+      padding: 6px 12px;
+      border-radius: var(--r-chip);
+      font-size: 14px;
+      font-weight: 600;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      transition: background var(--d-fast) var(--ease-out);
+    }
+    .add-btn:hover { background: rgba(32,138,239,0.2); }
+
+    /* Subhead */
+    .subhead {
+      padding: var(--space-3) var(--space-4) var(--space-2);
+      font-size: 13px;
+      color: var(--color-muted);
+      line-height: 1.5;
+    }
+
+    /* Content */
+    .content { padding: var(--space-2) var(--space-4); }
+
+    /* Friend list */
+    .friend-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+    .friend-row {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      padding: var(--space-3) var(--space-2);
+      border-bottom: 1px solid var(--color-border);
+      transition: background var(--d-fast) var(--ease-out);
+    }
+    .friend-row:last-child { border-bottom: none; }
+    .friend-row:hover { background: var(--color-surface); }
+    .friend-main {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      flex: 1;
+      min-width: 0;
+      text-decoration: none;
+      color: inherit;
+    }
+    .friend-avatar {
+      width: 40px; height: 40px;
+      border-radius: var(--r-pill);
+      border: 1px solid var(--color-border);
+      flex-shrink: 0;
+    }
+    .friend-text { flex: 1; min-width: 0; }
+    .friend-login {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--color-text);
+      font-family: var(--font-mono);
+    }
+    .friend-meta {
+      font-size: 12px;
+      color: var(--color-muted);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 2px;
+    }
+    .friend-meta svg { flex-shrink: 0; }
+    .meta-on { color: var(--color-success); }
+    .meta-off { color: var(--color-faint); }
+    .meta-self { color: var(--color-accent); }
+
+    .friend-remove {
+      background: transparent;
+      border: 1px solid var(--color-border);
+      color: var(--color-muted);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 10px;
+      border-radius: var(--r-chip);
+      cursor: pointer;
+      font-family: var(--font-sans);
+      flex-shrink: 0;
+      transition: all var(--d-fast) var(--ease-out);
+    }
+    .friend-remove:hover {
+      color: var(--color-danger);
+      border-color: var(--color-danger);
+    }
+
+    /* Loading skeleton */
+    .skeleton-row {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      padding: var(--space-3) var(--space-2);
+      border-bottom: 1px solid var(--color-border);
+    }
+    .skeleton {
+      background: linear-gradient(90deg, var(--color-raised) 0%, var(--color-border) 50%, var(--color-raised) 100%);
+      background-size: 200% 100%;
+      animation: skeleton 1.5s infinite;
+      border-radius: 4px;
+    }
+    @keyframes skeleton {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+    .skeleton-avatar { width: 40px; height: 40px; border-radius: 50%; }
+    .skeleton-text-1 { width: 120px; height: 14px; margin-bottom: 4px; }
+    .skeleton-text-2 { width: 80px; height: 11px; }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: var(--space-7) var(--space-4);
+    }
+    .empty-emoji { font-size: 48px; line-height: 1; margin-bottom: var(--space-3); }
+    .empty-heading {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: var(--space-2);
+    }
+    .empty-sub {
+      font-size: 14px;
+      color: var(--color-muted);
+      max-width: 280px;
+      margin: 0 auto var(--space-5);
+      line-height: 1.5;
+    }
+    .empty-cta {
+      background: var(--color-accent);
+      color: white;
+      border: none;
+      font-weight: 600;
+      font-size: 15px;
+      padding: 12px 24px;
+      border-radius: var(--r-chip);
+      cursor: pointer;
+      font-family: var(--font-sans);
+      transition: background var(--d-fast) var(--ease-out);
+    }
+    .empty-cta:hover { background: var(--color-accent-hover); }
+
+    /* Error state */
+    .error-state {
+      background: rgba(248, 81, 73, 0.08);
+      border: 1px solid rgba(248, 81, 73, 0.3);
+      border-radius: var(--r-card);
+      padding: var(--space-4);
+      display: flex;
+      align-items: flex-start;
+      gap: var(--space-3);
+    }
+    .error-icon { color: var(--color-danger); flex-shrink: 0; }
+    .error-body { flex: 1; }
+    .error-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+    .error-msg { font-size: 13px; color: var(--color-muted); margin-bottom: var(--space-2); }
+    .error-retry {
+      background: transparent;
+      border: 1px solid var(--color-border);
+      color: var(--color-text);
+      padding: 6px 12px;
+      border-radius: var(--r-chip);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font-sans);
+    }
+    .error-retry:hover { background: var(--color-raised); }
+
+    /* Tab bar */
+    .tab-bar {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      max-width: 420px;
+      margin: 0 auto;
+      background: var(--color-surface);
+      border-top: 1px solid var(--color-border);
+      display: flex;
+      padding: 8px 0;
+      padding-bottom: calc(8px + env(safe-area-inset-bottom, 0));
+    }
+    .tab {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      padding: 6px 0;
+      color: var(--color-faint);
+      background: none;
+      border: none;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: var(--font-sans);
+    }
+    .tab.active { color: var(--color-accent); }
+    .tab svg { width: 22px; height: 22px; }
+
+    /* Dev state toggles */
+    .state-toggles {
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      background: var(--color-raised);
+      border: 1px solid var(--color-border-strong);
+      border-radius: var(--r-card);
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      box-shadow: var(--shadow-2);
+      z-index: 100;
+    }
+    .state-toggles-title {
+      font-weight: 600;
+      color: var(--color-muted);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 4px 6px 2px;
+    }
+    .state-toggle {
+      background: transparent;
+      border: 1px solid var(--color-border);
+      border-radius: var(--r-chip);
+      color: var(--color-text);
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      text-align: left;
+      font-family: var(--font-sans);
+      transition: all var(--d-fast) var(--ease-out);
+    }
+    .state-toggle:hover { background: var(--color-border); }
+    .state-toggle.active {
+      background: var(--color-accent);
+      color: white;
+      border-color: var(--color-accent);
+    }
+
+    .state-ready, .state-loading, .state-empty, .state-error,
+    .state-ready-flex, .state-loading-flex, .state-empty-flex, .state-error-flex { display: none; }
+    [data-state="ready"] .state-ready { display: block; }
+    [data-state="ready"] .state-ready-flex { display: flex; }
+    [data-state="loading"] .state-loading { display: block; }
+    [data-state="loading"] .state-loading-flex { display: flex; }
+    [data-state="empty"] .state-empty { display: block; }
+    [data-state="empty"] .state-empty-flex { display: flex; }
+    [data-state="error"] .state-error { display: block; }
+    [data-state="error"] .state-error-flex { display: flex; }
+
+    @media (max-width: 440px) {
+      .state-toggles { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="phone" data-state="ready">
+    <header class="header">
+      <h1 class="header-title">Friends</h1>
+      <button class="add-btn" type="button">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        Add
+      </button>
+    </header>
+
+    <!-- Subhead -->
+    <p class="subhead state-ready">
+      Friends see your streak and you see theirs.<br>
+      <span style="font-family:var(--font-mono);">3 of 25 following</span>
+    </p>
+    <p class="subhead state-empty" style="display:none;">
+      Add up to 25 friends. Their ships appear in your feed.
+    </p>
+
+    <main class="content">
+      <!-- === Ready state: 3 friends with mixed badges === -->
+      <section class="friend-list state-ready" aria-label="Friends list">
+        <!-- On CodeTrail -->
+        <div class="friend-row">
+          <a class="friend-main" href="https://github.com/davephoenix360" target="_blank" rel="noopener">
+            <img class="friend-avatar" src="https://api.dicebear.com/7.x/avataaars/svg?seed=davephoenix360" alt="" />
+            <div class="friend-text">
+              <div class="friend-login">@davephoenix360</div>
+              <div class="friend-meta meta-on">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>On CodeTrail</span>
+              </div>
+            </div>
+          </a>
+          <button class="friend-remove" type="button" aria-label="Stop following @davephoenix360">Remove</button>
+        </div>
+
+        <!-- On CodeTrail, recently active -->
+        <div class="friend-row">
+          <a class="friend-main" href="https://github.com/tino" target="_blank" rel="noopener">
+            <img class="friend-avatar" src="https://api.dicebear.com/7.x/avataaars/svg?seed=tino" alt="" />
+            <div class="friend-text">
+              <div class="friend-login">@tino</div>
+              <div class="friend-meta meta-on">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>On CodeTrail</span>
+                <span style="margin: 0 4px; color: var(--color-faint);">·</span>
+                <span>shipped 2h ago</span>
+              </div>
+            </div>
+          </a>
+          <button class="friend-remove" type="button" aria-label="Stop following @tino">Remove</button>
+        </div>
+
+        <!-- Off CodeTrail (subtle, not in feed) -->
+        <div class="friend-row">
+          <a class="friend-main" href="https://github.com/sarah_codes" target="_blank" rel="noopener">
+            <img class="friend-avatar" src="https://api.dicebear.com/7.x/avataaars/svg?seed=sarah" alt="" />
+            <div class="friend-text">
+              <div class="friend-login">@sarah_codes</div>
+              <div class="friend-meta meta-off">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/></svg>
+                <span>Not on CodeTrail</span>
+              </div>
+            </div>
+          </a>
+          <button class="friend-remove" type="button" aria-label="Stop following @sarah_codes">Remove</button>
+        </div>
+      </section>
+
+      <!-- === Loading state: skeleton rows === -->
+      <section class="friend-list state-loading" aria-label="Loading">
+        <div class="skeleton-row">
+          <div class="skeleton skeleton-avatar"></div>
+          <div>
+            <div class="skeleton skeleton-text-1"></div>
+            <div class="skeleton skeleton-text-2"></div>
+          </div>
+        </div>
+        <div class="skeleton-row">
+          <div class="skeleton skeleton-avatar"></div>
+          <div>
+            <div class="skeleton skeleton-text-1"></div>
+            <div class="skeleton skeleton-text-2"></div>
+          </div>
+        </div>
+        <div class="skeleton-row">
+          <div class="skeleton skeleton-avatar"></div>
+          <div>
+            <div class="skeleton skeleton-text-1"></div>
+            <div class="skeleton skeleton-text-2"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- === Empty state: 0 friends === -->
+      <section class="state-empty" aria-label="No friends">
+        <div class="empty-state">
+          <div class="empty-emoji" aria-hidden="true">👀</div>
+          <h2 class="empty-heading">No friends yet</h2>
+          <p class="empty-sub">Follow a friend to see what they're shipping. Their streak, their week, the works.</p>
+          <button class="empty-cta" type="button">Add your first friend</button>
+        </div>
+      </section>
+
+      <!-- === Error state === -->
+      <section class="state-error" aria-label="Friends error">
+        <div class="error-state">
+          <svg class="error-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <div class="error-body">
+            <div class="error-title">Couldn't load your friends</div>
+            <div class="error-msg">Check your connection and try again.</div>
+            <button class="error-retry" type="button">Try again</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Bottom tab bar -->
+    <nav class="tab-bar" aria-label="Main navigation">
+      <button class="tab">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <span>Home</span>
+      </button>
+      <button class="tab active" aria-current="page">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+        <span>Friends</span>
+      </button>
+      <button class="tab">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>Settings</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- State toggle controls (dev affordance) -->
+  <div class="state-toggles" role="group" aria-label="View state">
+    <div class="state-toggles-title">View state</div>
+    <button class="state-toggle active" data-set-state="ready">Ready (3 friends)</button>
+    <button class="state-toggle" data-set-state="loading">Loading</button>
+    <button class="state-toggle" data-set-state="empty">Empty (0 friends)</button>
+    <button class="state-toggle" data-set-state="error">Error</button>
+  </div>
+
+  <script>
+    const phone = document.querySelector('.phone');
+    const toggles = document.querySelectorAll('[data-set-state]');
+    toggles.forEach(t => t.addEventListener('click', () => {
+      const state = t.dataset.setState;
+      phone.setAttribute('data-state', state);
+      toggles.forEach(x => x.classList.toggle('active', x === t));
+    }));
+  </script>
+</body>
+</html>
