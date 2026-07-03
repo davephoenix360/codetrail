@@ -31,14 +31,21 @@ service cloud.firestore {
 
     // ---- Public reverse-lookup: GitHub login → CodeTrail uid ----
     // Anyone can read (to check "is my friend on CodeTrail?"). Only the
-    // owning authenticated user can create their own entry. No updates or
-    // deletes by the user — the doc is the public mapping. (Login changes
-    // on GitHub are rare and out of scope for MVP; admin can clean up.)
+    // owning authenticated user can create OR update their own entry —
+    // updates are required for the self-heal flow (use-auth.ts) which
+    // runs `setDoc(...{ merge: true })` on every sign-in to ensure the
+    // index doc exists for pre-575e3ac users. The auth check on
+    // `request.resource.data.uid == request.auth.uid` ensures a user
+    // can only write their own entry, never someone else's. (Login
+    // changes on GitHub are rare and out of scope for MVP; admin can
+    // clean up if needed.)
     match /usersByLogin/{login} {
       allow read: if true;
       allow create: if request.auth != null
                     && request.resource.data.uid == request.auth.uid;
-      allow update, delete: if false;
+      allow update: if request.auth != null
+                    && request.resource.data.uid == request.auth.uid;
+      allow delete: if false;
     }
 
     // User profile: only the owning user can read or write.
