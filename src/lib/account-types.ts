@@ -39,6 +39,27 @@ export interface StreakSnapshot {
   weekly: Array<{ date: string; count: number }>;
 }
 
+/**
+ * Notification preferences (Phase 2.7). Stored on the user profile
+ * doc, written by Settings → Notifications, read by the server-side
+ * scheduler.
+ *
+ * See `lib/notification-prefs.ts` for the canonical shape and the
+ * default values. This is a re-declaration for type-completeness on
+ * the user profile; the lib file owns the source of truth.
+ */
+export interface NotificationPrefsShape {
+  dailyCheckIn: boolean;
+  streakMilestones: boolean;
+  streakBroken: boolean;
+  welcomeBack: boolean;
+  friendActivity: boolean;
+  lowNoiseMode: boolean;
+  checkInTime: string;
+  timezone: string;
+  updatedAt: number;
+}
+
 export interface UserProfile {
   /** Firebase auth UID (also the Firestore doc ID). */
   uid: string;
@@ -63,4 +84,13 @@ export interface UserProfile {
   streakData?: StreakSnapshot | null;
   /** When streakData was last refreshed from GitHub (ms epoch). */
   streakUpdatedAt?: number | null;
+  // ---- Push notifications (Phase 2.7+) ----
+  /** Expo Push Token for sending push notifications. Null if registration failed or was skipped. */
+  expoPushToken?: string | null;
+  /** IANA timezone (e.g. "America/Edmonton"). Captured at registration time. */
+  timezone?: string;
+  /** When the push token was registered (ms epoch). */
+  pushRegisteredAt?: number | null;
+  /** User's notification preferences. */
+  notificationPrefs?: NotificationPrefsShape;
 }

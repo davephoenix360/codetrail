@@ -36,6 +36,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { useFriends } from '@/hooks/use-friends';
 import { useFeed } from '@/hooks/use-feed';
 import { useStreak } from '@/hooks/use-streak';
+import { usePushNotifications } from '@/lib/notifications';
 import { listTrackedRepos, trackRepo, untrackRepo } from '@/lib/firebase-repos';
 import type { TrackedRepo } from '@/lib/firebase-repos';
 import type { StreakSnapshot } from '@/lib/account-types';
@@ -47,6 +48,11 @@ type LoadState = 'loading' | 'ready' | 'error';
 
 export default function ReposScreen() {
   const { user, loading, isSignedIn, signOut, githubAccessToken, profileLoaded, userProfile, updateStreak } = useAuth();
+
+  // Register for push notifications + set up tap/receive listeners.
+  // The hook handles permission requests, device checks, and persistence
+  // of the token + timezone to the user profile. Fires once per uid.
+  usePushNotifications(user?.uid ?? null);
 
   // Defensive: if a signed-out user lands here, bounce back to /.
   useEffect(() => {
@@ -379,6 +385,14 @@ export default function ReposScreen() {
             </ThemedText>
           </View>
           <View style={styles.headerActions}>
+            <Pressable
+              onPress={() => router.push('/settings')}
+              accessibilityRole="button"
+              accessibilityLabel="Settings"
+              style={({ pressed }) => [styles.iconBtn, pressed && styles.btnPressed]}
+            >
+              <Ionicons name="settings-outline" size={18} color={Colors.dark.text} />
+            </Pressable>
             <Pressable
               onPress={() => router.push('/friends')}
               accessibilityRole="button"
