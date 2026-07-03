@@ -19,7 +19,18 @@
 import { FirebaseApp, getApps, initializeApp } from 'firebase/app';
 import { Auth, getAuth, initializeAuth } from 'firebase/auth';
 import { Firestore, getFirestore } from 'firebase/firestore';
-// @ts-expect-error - getReactNativePersistence is exported by @firebase/auth's RN build, but tsc doesn't resolve the "react-native" package.json field
+// `getReactNativePersistence` IS exported from `@firebase/auth`, but only
+// via the package's `react-native` build condition. tsc's default
+// `moduleResolution: "node"` does not apply that condition, so it thinks
+// the export doesn't exist. Metro (the bundler) DOES apply the
+// `react-native` condition and gets the correct RN build at runtime.
+// We suppress the type error here; the import works at runtime.
+// (Original Firebase v11 advice suggested `firebase/auth/react-native`,
+//  but v12 removed that subpath — there are only `./auth`, `./auth/cordova`,
+//  and `./auth/web-extension` subpath exports. The correct v12 import is
+//  from `@firebase/auth` directly, with the `react-native` build condition
+//  applied by the bundler.)
+// @ts-expect-error -- see comment above; tsc can't see the `react-native` build condition.
 import { getReactNativePersistence } from '@firebase/auth';
 import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 
