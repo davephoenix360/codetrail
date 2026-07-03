@@ -19,7 +19,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.davephoenix360.codetrail"
+      "package": "com.davephoenix360.codetrail",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "output": "static",
@@ -46,12 +47,7 @@
         }
       ],
       "expo-font",
-      [
-        "@react-native-firebase/app",
-        {
-          "googleServicesFile": "./google-services.json"
-        }
-      ]
+      "@react-native-firebase/app"
     ],
     "experiments": {
       "typedRoutes": true,
