@@ -37,12 +37,25 @@
           }
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#208AEF"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
-    "owner": "davephoenix360"
+    "owner": "diepreye",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "56bccd0e-b8f2-4183-a3cc-57995078f286"
+      }
+    }
   }
 }
