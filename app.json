@@ -44,6 +44,13 @@
           "icon": "./assets/images/notification-icon.png",
           "color": "#208AEF"
         }
+      ],
+      "expo-font",
+      [
+        "@react-native-firebase/app",
+        {
+          "googleServicesFile": "./google-services.json"
+        }
       ]
     ],
     "experiments": {
