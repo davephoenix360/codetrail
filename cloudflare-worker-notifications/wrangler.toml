@@ -1,0 +1,16 @@
+name = "codetrail-notifications"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+# Hourly cron — every user's local 20:00 falls within some hourly run.
+# Half-hourly would double invocations for marginal latency improvement.
+[triggers]
+crons = ["0 * * * *"]
+
+[vars]
+LOG_LEVEL = "info"
+FIRESTORE_PROJECT_ID = "codetrail-968d1"
+
+# Secrets (set via `wrangler secret put`):
+#   FIREBASE_SERVICE_ACCOUNT_JSON — full service account JSON (private key, etc.)
+#   EXPO_ACCESS_TOKEN              — optional, for higher Expo Push rate limits

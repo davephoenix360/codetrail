@@ -1,0 +1,21 @@
+{
+  "name": "codetrail-notifications",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Worker scheduler for CodeTrail Phase 2.7 hype-man push notifications. Cron-triggered, reads user prefs from Firestore, sends via Expo Push API.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "expo-server-sdk": "^3.7.0",
+    "jose": "^5.6.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240605.0",
+    "typescript": "^5.7.0",
+    "wrangler": "^3.65.0"
+  }
+}
