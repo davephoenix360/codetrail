@@ -67,6 +67,12 @@ export default function ReposScreen() {
   const [pickerState, setPickerState] = useState<LoadState>('loading');
   const [pickerError, setPickerError] = useState<string | null>(null);
 
+  // Bulk "track all" flow — fetches all public repos, writes them to
+  // Firestore in parallel, shows progress. Used by the empty-state CTA.
+  const [bulkTracking, setBulkTracking] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+
   // Streak dashboard. Uses the stored streak cache (on the user profile)
   // if it's recent (< 1 hour) — instant render, no API call. Otherwise
   // computes via loadStreak and writes back to Firestore for next time.
@@ -283,6 +289,54 @@ export default function ReposScreen() {
     [user, refreshStreak],
   );
 
+  // ---- Bulk track all: fetch all public repos + write to Firestore ----
+  //
+  // Used by the empty-state "Track all" CTA. One-click onboarding path —
+  // no per-repo tapping. Failed writes are tolerated (Promise.allSettled);
+  // the user can retry for the missing ones from the picker.
+  const handleTrackAll = useCallback(async () => {
+    if (!user || !githubAccessToken) return;
+    setBulkTracking(true);
+    setBulkError(null);
+    setBulkProgress(null);
+    try {
+      const repos = await listMyRepos(githubAccessToken);
+      if (repos.length === 0) {
+        setBulkError('No public projects on your GitHub to track.');
+        setBulkTracking(false);
+        return;
+      }
+      const trackedSet = new Set(tracked.map((r) => r.repoId));
+      const toTrack = repos.filter((r) => !trackedSet.has(r.id));
+      if (toTrack.length === 0) {
+        setBulkError('All your public projects are already tracked.');
+        setBulkTracking(false);
+        return;
+      }
+      setBulkProgress({ done: 0, total: toTrack.length });
+      let done = 0;
+      await Promise.allSettled(
+        toTrack.map(async (repo) => {
+          await trackRepo(user.uid, repo);
+          done++;
+          setBulkProgress({ done, total: toTrack.length });
+        }),
+      );
+      // Refresh the tracked list so the dashboard reflects the new repos,
+      // and the streak cache recomputes (or stays cached — the streak hook
+      // decides based on age).
+      await reloadTracked();
+      void refreshStreak();
+    } catch (e) {
+      setBulkError(
+        e instanceof Error ? e.message : 'Could not track your projects. Try again.',
+      );
+    } finally {
+      setBulkTracking(false);
+      setBulkProgress(null);
+    }
+  }, [user, githubAccessToken, tracked, reloadTracked, refreshStreak]);
+
   // ---- Pull-to-refresh: reload tracked repos, streak, friends, feed ----
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -387,16 +441,58 @@ export default function ReposScreen() {
                 ✨
               </ThemedText>
               <ThemedText type="h2" style={styles.emptyHeading}>
-                Pick your projects
+                Track your projects
               </ThemedText>
               <ThemedText type="small" style={[styles.muted, styles.spacedTop, styles.emptyBody]}>
-                We track your streak on the repos you choose. No judgment, just momentum.
+                We track your streak on your public repos. Add them all now, or pick a few — your call.
               </ThemedText>
+              {bulkError ? (
+                <ThemedText type="small" style={[styles.errorText, styles.spacedTop]}>
+                  {bulkError}
+                </ThemedText>
+              ) : bulkTracking && bulkProgress ? (
+                <ThemedText type="small" style={[styles.muted, styles.spacedTop]}>
+                  Tracking {bulkProgress.done} of {bulkProgress.total}…
+                </ThemedText>
+              ) : null}
+              <Pressable
+                onPress={handleTrackAll}
+                disabled={bulkTracking}
+                style={({ pressed }) => [
+                  styles.primaryBtn,
+                  styles.spacedTop,
+                  pressed && styles.btnPressed,
+                  bulkTracking && styles.btnDisabled,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Track all my public projects"
+              >
+                {bulkTracking ? (
+                  <View style={styles.bulkBtnContent}>
+                    <ActivityIndicator size="small" color="#fff" />
+                    <ThemedText type="smallBold" style={styles.primaryBtnLabel}>
+                      Tracking…
+                    </ThemedText>
+                  </View>
+                ) : (
+                  <ThemedText type="smallBold" style={styles.primaryBtnLabel}>
+                    Track all my public projects
+                  </ThemedText>
+                )}
+              </Pressable>
               <Pressable
                 onPress={openPicker}
-                style={({ pressed }) => [styles.primaryBtn, pressed && styles.btnPressed, styles.spacedTop]}
+                disabled={bulkTracking}
+                style={({ pressed }) => [
+                  styles.secondaryBtn,
+                  styles.spacedTop,
+                  pressed && styles.btnPressed,
+                  bulkTracking && styles.btnDisabled,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Browse your projects"
               >
-                <ThemedText type="smallBold" style={styles.primaryBtnLabel}>
+                <ThemedText type="smallBold" style={styles.secondaryBtnLabel}>
                   Browse your projects
                 </ThemedText>
               </Pressable>
@@ -557,6 +653,23 @@ const styles = StyleSheet.create({
     borderRadius: Radius.chip,
   },
   primaryBtnLabel: { color: '#fff' },
+  secondaryBtn: {
+    backgroundColor: Colors.dark.raised,
+    paddingVertical: Spacing.three,
+    paddingHorizontal: Spacing.five,
+    borderRadius: Radius.chip,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.dark.border,
+  },
+  secondaryBtnLabel: { color: Colors.dark.text },
+  btnDisabled: { opacity: 0.5 },
+  bulkBtnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+  },
+  errorText: { color: Colors.dark.danger, textAlign: 'center' },
   addRepoBtn: {
     backgroundColor: Colors.dark.accentSoft,
     borderWidth: StyleSheet.hairlineWidth,
