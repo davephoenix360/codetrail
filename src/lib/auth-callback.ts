@@ -33,7 +33,6 @@
  * handoff details.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Linking from 'expo-linking';
 import { GithubAuthProvider, signInWithCredential } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 
@@ -44,14 +43,36 @@ const GITHUB_OAUTH_CLIENT_ID = process.env.EXPO_PUBLIC_GITHUB_OAUTH_CLIENT_ID ??
 const EXCHANGE_URL = process.env.EXPO_PUBLIC_CODETRAIL_EXCHANGE_URL ?? '';
 
 /**
- * Deep-link URL that GitHub will redirect to after the user authorizes.
+ * OAuth callback URLs.
  *
- * `Linking.createURL()` returns the right URL for the current runtime:
- *   - In Expo Go (dev):  `exp://<lan-ip>:<metro-port>/--/auth/callback`
- *   - In a standalone build: `codetrail://auth/callback`
- *     (matches the `scheme: "codetrail"` field in `app.json`)
+ * GitHub requires the redirect_uri to be HTTPS. Native app custom schemes
+ * (like `codetrail://`) are NOT accepted by GitHub's OAuth app settings.
+ * The fix: the Cloudflare Worker acts as the OAuth callback (HTTPS), and
+ * 302-redirects to the app's deep link.
+ *
+ * Flow:
+ *   1. App opens WebBrowser to GitHub authorize URL with
+ *      `redirect_uri = WORKER_CALLBACK_URL`
+ *   2. User approves; GitHub redirects browser to:
+ *      `WORKER_CALLBACK_URL?code=...&state=...`
+ *   3. Worker's /callback route 302-redirects to:
+ *      `APP_DEEP_LINK?code=...&state=...`
+ *   4. WebBrowser sees the deep link match, returns URL to the app
+ *   5. App POSTs code + redirectUri=WORKER_CALLBACK_URL to the Worker
+ *      for exchange
+ *
+ * `APP_DEEP_LINK` is what WebBrowser watches for (and what the auth
+ * callback screen's URL handler matches). `WORKER_CALLBACK_URL` is
+ * what we send to GitHub and what we send back to the Worker on
+ * exchange.
+ *
+ * This is the same callback URL for Expo Go, EAS dev builds, and
+ * production builds — only the app's bundle changes.
  */
-export const REDIRECT_URI = Linking.createURL('/auth/callback');
+export const WORKER_CALLBACK_URL = `${EXCHANGE_URL}/callback`;
+export const APP_DEEP_LINK = 'codetrail://auth/callback';
+/** Backward-compat: older callers use REDIRECT_URI. */
+export const REDIRECT_URI = WORKER_CALLBACK_URL;
 
 const STATE_STORAGE_KEY = '@codetrail/oauth-state';
 

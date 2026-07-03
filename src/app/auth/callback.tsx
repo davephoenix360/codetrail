@@ -19,7 +19,7 @@ import { useEffect, useRef } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
-import { processAuthCallback, REDIRECT_URI } from '@/lib/auth-callback';
+import { processAuthCallback, APP_DEEP_LINK } from '@/lib/auth-callback';
 
 export default function AuthCallbackRoute() {
   const params = useLocalSearchParams<{
@@ -38,12 +38,14 @@ export default function AuthCallbackRoute() {
     (async () => {
       // Reconstruct the full URL that processAuthCallback expects.
       // useLocalSearchParams strips the host/scheme, so we add them back.
+      // The deep link we land on is `codetrail://auth/callback?code=...&state=...`
+      // (the Worker's /callback route already 302-redirects to this URL).
       const search = new URLSearchParams();
       if (params.code) search.set('code', String(params.code));
       if (params.state) search.set('state', String(params.state));
       if (params.error) search.set('error', String(params.error));
       if (params.error_description) search.set('error_description', String(params.error_description));
-      const fullUrl = `${REDIRECT_URI.split('?')[0]}?${search.toString()}`;
+      const fullUrl = `${APP_DEEP_LINK}?${search.toString()}`;
 
       const result = await processAuthCallback(fullUrl);
 

@@ -45,10 +45,21 @@ export interface Env {
 // because they're bound to the user's own GitHub account.)
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
   'Access-Control-Max-Age': '86400',
 } as const;
+
+/**
+ * App deep-link scheme for the GitHub OAuth callback. The Worker
+ * redirects here after GitHub calls back to /callback with the
+ * authorization code.
+ *
+ * Why a custom scheme: Expo Router's Linking API catches this URL and
+ * routes to /auth/callback in the app. The app then POSTs the code to
+ * the Worker for exchange.
+ */
+const APP_DEEP_LINK = 'codetrail://auth/callback';
 
 const GITHUB_API_BASE = 'https://api.github.com';
 
@@ -654,9 +665,36 @@ export default {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
+
+    const url = new URL(request.url);
+    const path = url.pathname.replace(/\/+$/, '') || '/';
+
+    // GET /callback — GitHub OAuth redirect target.
+    // GitHub redirects the browser here with ?code=...&state=... after
+    // the user approves. We 302-redirect to the app's deep link so the
+    // auth-callback screen in the app catches it. The app then POSTs
+    // the code to the Worker for exchange.
+    if (request.method === 'GET' && path === '/callback') {
+      const code = url.searchParams.get('code');
+      const state = url.searchParams.get('state');
+      if (!code) {
+        return new Response('Missing OAuth code in callback', { status: 400 });
+      }
+      // Build the deep link. Both code and state are URL-encoded in the
+      // path; the app will decode them.
+      const params = new URLSearchParams({ code });
+      if (state) params.set('state', state);
+      const deepLink = `${APP_DEEP_LINK}?${params.toString()}`;
+      log('info', 'oauth-callback: redirecting to app', { hasState: !!state });
+      return new Response(null, {
+        status: 302,
+        headers: { 'Location': deepLink },
+      });
+    }
+
     if (request.method !== 'POST') {
       return jsonResponse(
-        { error: 'Method not allowed; use POST' },
+        { error: 'Method not allowed; use POST (or GET /callback)' },
         405,
       );
     }
@@ -671,8 +709,7 @@ export default {
 
     // Route on path. Worker URL is the *.workers.dev root, so we use path
     // segments to dispatch (Workers don't have built-in routing).
-    const url = new URL(request.url);
-    const path = url.pathname.replace(/\/+$/, '') || '/';
+    // (url and path were already parsed at the top for the GET /callback route.)
 
     try {
       // POST / — OAuth code exchange

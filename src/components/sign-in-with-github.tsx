@@ -49,6 +49,7 @@ import * as Linking from 'expo-linking';
 
 import {
   AUTH_CONSTANTS,
+  APP_DEEP_LINK,
   generateAndStoreState,
   processAuthCallback,
 } from '@/lib/auth-callback';
@@ -82,7 +83,7 @@ export function SignInWithGitHub() {
   // manually, and the URL is processed by the current handler.
   useEffect(() => {
     const sub = Linking.addEventListener('url', async ({ url }) => {
-      if (!url.startsWith(REDIRECT_URI)) return;
+      if (!url.startsWith(APP_DEEP_LINK)) return;
       const handler = authHandlerRef.current;
       if (!handler) return; // No in-flight sign-in, ignore stray deep links
       authHandlerRef.current = null;
@@ -141,8 +142,10 @@ export function SignInWithGitHub() {
     let result: Awaited<ReturnType<typeof WebBrowser.openAuthSessionAsync>>;
     try {
       // 2. Open the system browser. This blocks until the user authorizes
-      // and GitHub redirects to REDIRECT_URI.
-      result = await WebBrowser.openAuthSessionAsync(authUrl.toString(), REDIRECT_URI);
+      // and the Worker 302-redirects us to APP_DEEP_LINK. WebBrowser
+      // watches for APP_DEEP_LINK (not REDIRECT_URI, which is the Worker
+      // URL — that's just an intermediate hop).
+      result = await WebBrowser.openAuthSessionAsync(authUrl.toString(), APP_DEEP_LINK);
       if (__DEV__) {
         const url = result.type === 'success' ? result.url : '(no url)';
         console.log('[codetrail] WebBrowser.openAuthSessionAsync resolved:', result.type, url);
