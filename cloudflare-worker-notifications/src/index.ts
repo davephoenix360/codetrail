@@ -12,7 +12,7 @@
  *   6. Log results.
  */
 
-import type { Env, NotificationSettings } from './types';
+import type { Env, NotificationSettings, RenderedNotification } from './types';
 import {
   getFirestoreAccessToken,
   listAllUsersWithNotifications,
@@ -28,8 +28,110 @@ import { evaluateWelcomeBack } from './notifications/welcome-back';
 
 export {};
 
-// Workers' default export — handles scheduled events.
+// Workers' default export — handles scheduled (cron) events AND HTTP requests.
 export default {
+  /**
+   * HTTP fetch handler. Routes:
+   *   GET /health → { ok: true, schedule: "0 * * * *" }
+   *   GET /test?uid=<uid>   → fires a test push to the given uid (or default to "me")
+   *                            Requires Authorization: Bearer <TEST_AUTH_TOKEN>.
+   *   GET /test/me          → shortcut for /test?uid=AC2OdH3GOvbvd04nXHwI5Jpv13
+   *                            (the signed-in user, hardcoded for convenience)
+   *   *                     → 404
+   *
+   * The /test route does NOT call markNotificationSent — the real cron run
+   * is unaffected. Title is prefixed "[Test]" so it's visibly not a real
+   * eligibility-driven notification.
+   */
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+
+    // CORS preflight: keep cheap and safe.
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { status: 204 });
+    }
+
+    if (url.pathname === '/health') {
+      return Response.json({
+        ok: true,
+        schedule: '0 * * * *',
+        service: 'codetrail-notifications',
+        ts: new Date().toISOString(),
+      });
+    }
+
+    if (url.pathname === '/test' || url.pathname === '/test/me') {
+      // Auth — only callers with the secret can fire a test push.
+      const auth = request.headers.get('Authorization') ?? '';
+      const expected = `Bearer ${env.TEST_AUTH_TOKEN ?? ''}`;
+      if (!env.TEST_AUTH_TOKEN || auth !== expected) {
+        return Response.json(
+          { ok: false, error: 'unauthorized' },
+          { status: 401 },
+        );
+      }
+
+      // Resolve target uid.
+      let uid = url.searchParams.get('uid');
+      if (url.pathname === '/test/me' || uid === 'me' || !uid) {
+        uid = 'AC2OdH3GOvbvd04nXHwI5Jpv13'; // davephoenix360
+      }
+
+      try {
+        const accessToken = await getFirestoreAccessToken(env.FIREBASE_SERVICE_ACCOUNT_JSON);
+        const settings = await getNotificationSettings(env.FIRESTORE_PROJECT_ID, uid, accessToken);
+        if (!settings) {
+          return Response.json({ ok: false, error: `no settings for uid=${uid}` }, { status: 404 });
+        }
+        if (!settings.expoPushToken) {
+          return Response.json(
+            { ok: false, error: 'user has no expoPushToken — sign in to register one' },
+            { status: 400 },
+          );
+        }
+
+        // Build a clearly-marked test notification. Uses the same shape
+        // as a real dailyCheckIn but with [Test] in the title so it
+        // doesn't masquerade as a real one in analytics.
+        const notification: RenderedNotification = {
+          type: 'dailyCheckIn',
+          title: '[Test] CodeTrail',
+          body: `If you can see this, the push loop works end-to-end. (uid=${uid.slice(0, 6)}…)`,
+          data: { uid, test: '1', streak: String(settings.streakCurrent ?? 0) },
+        };
+
+        const result = await sendNotifications(
+          [{ uid, token: settings.expoPushToken, notification }],
+          {
+            projectId: env.FIRESTORE_PROJECT_ID,
+            accessToken,
+            tokenToUid: () => uid,
+          },
+        );
+
+        return Response.json({
+          ok: result.sent > 0,
+          sent: result.sent,
+          failed: result.failed,
+          cleared: result.cleared,
+          uid,
+          tokenTail: settings.expoPushToken.slice(-12),
+        });
+      } catch (err) {
+        console.error('/test: error', err);
+        return Response.json(
+          { ok: false, error: String(err) },
+          { status: 500 },
+        );
+      }
+    }
+
+    return Response.json(
+      { ok: false, error: 'not found — try /health or /test' },
+      { status: 404 },
+    );
+  },
+
   /**
    * Cron trigger. Cloudflare passes a ScheduledController with
    * cron + scheduledTime. The handler should be idempotent (we run

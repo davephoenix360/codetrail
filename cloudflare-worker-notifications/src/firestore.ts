@@ -8,6 +8,26 @@
  * Auth: service account JSON → RS256 JWT → OAuth2 access token (cached
  * per isolate for ~55 min). See the "Firestore access" section of the
  * design doc for the full rationale.
+ *
+ * ## Schema (v1, matches the live app)
+ *
+ * Notification state lives on the PARENT user doc, NOT a sub-doc:
+ *   users/{uid}
+ *     - expoPushToken: string | null        ← set by notifications.ts on registration
+ *     - timezone: string                   ← IANA, set on registration
+ *     - streak: number                     ← current streak (days)
+ *     - lastShippedAt: number | null       ← ms epoch
+ *     - lastSeenAt: number                 ← ms epoch
+ *     - notificationPrefs: { ... }         ← all the toggles + checkInTime
+ *
+ * The Worker also writes back its own state into the parent doc:
+ *     - lastSentAt: { dailyCheckIn?, broken?, milestone?, welcomeBack? }
+ *     - milestonesCelebrated: number[]     ← streak values already announced
+ *
+ * The first version of this module assumed a `users/{uid}/settings/notifications`
+ * sub-doc. That was wrong — the app has always written to the parent doc.
+ * Mismatch caught when the first /test request 404'd. See
+ * `notes/codetrail/worker-schema-mismatch.md` for the full story.
  */
 
 import * as jose from 'jose';
@@ -68,19 +88,25 @@ export async function getFirestoreAccessToken(
 }
 
 /**
- * List all users with notification settings (i.e., anyone who has
- * saved prefs). Uses a structured query — we don't enumerate the
- * whole users collection, only those with the notifications sub-doc.
+ * List all users with notifications effectively enabled.
  *
- * In production, this should be paginated (Firestore REST returns
- * `nextPageToken`). For the MVP (under 1k users), we assume one page.
+ * Signal: `expoPushToken != null`. The app only writes the token after
+ * the user grants notification permission, and `notificationPrefs` is
+ * written alongside it (with sensible defaults). So a non-null token
+ * means "user opted in" — exactly the set we want to iterate.
+ *
+ * We can't filter on `expoPushToken != null` directly in Firestore's
+ * REST query (no inequality-on-string + null-check), so we filter on
+ * `notificationPrefs.dailyCheckIn == true` and post-filter for token
+ * presence.
+ *
+ * In production, this should be paginated. For the MVP (under 1k users),
+ * one page is fine.
  */
 export async function listAllUsersWithNotifications(
   projectId: string,
   accessToken: string,
 ): Promise<Array<{ uid: string; settings: NotificationSettings }>> {
-  // Firestore structured query via REST:
-  // POST /v1/projects/{project}/databases/(default)/documents:runQuery
   const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
 
   const res = await fetch(url, {
@@ -94,12 +120,11 @@ export async function listAllUsersWithNotifications(
         from: [{ collectionId: 'users' }],
         where: {
           fieldFilter: {
-            field: { fieldPath: 'notificationsEnabled' },
+            field: { fieldPath: 'notificationPrefs.dailyCheckIn' },
             op: 'EQUAL',
             value: { booleanValue: true },
           },
         },
-        // Limit to a sane number; iterate via startAt if more.
         limit: 1000,
       },
     }),
@@ -118,20 +143,24 @@ export async function listAllUsersWithNotifications(
     .map(d => {
       // Doc name: projects/{p}/databases/(default)/documents/users/{uid}
       const uid = d.document!.name.split('/').pop()!;
-      const settings = parseNotificationSettings(d.document!.fields);
+      const settings = parseUserDocForSettings(d.document!.fields);
+      // Post-filter: skip users without a push token.
+      if (!settings.expoPushToken) return null;
       return { uid, settings };
-    });
+    })
+    .filter((x): x is { uid: string; settings: NotificationSettings } => x !== null);
 }
 
 /**
- * Fetch one user's notification settings sub-doc.
+ * Fetch one user's notification settings by reading the parent user doc
+ * and mapping it to the Worker's NotificationSettings shape.
  */
 export async function getNotificationSettings(
   projectId: string,
   uid: string,
   accessToken: string,
 ): Promise<NotificationSettings | null> {
-  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${uid}/settings/notifications`;
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${uid}`;
 
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -139,16 +168,18 @@ export async function getNotificationSettings(
 
   if (res.status === 404) return null;
   if (!res.ok) {
-    throw new Error(`Firestore get settings failed: ${res.status} ${await res.text()}`);
+    throw new Error(`Firestore get user failed: ${res.status} ${await res.text()}`);
   }
 
-  const doc = (await res.json()) as { fields: Record<string, unknown> };
-  return parseNotificationSettings(doc.fields);
+  const doc = (await res.json()) as { fields?: Record<string, unknown> };
+  if (!doc.fields) return null;
+  return parseUserDocForSettings(doc.fields);
 }
 
 /**
- * Update the lastSentAt timestamp for one notification type. Uses a
- * patch (POST with updateMask) to avoid clobbering other fields.
+ * Update the lastSentAt timestamp for one notification type on the
+ * PARENT user doc. Uses a patch (POST with updateMask) to avoid
+ * clobbering other fields.
  */
 export async function markNotificationSent(
   projectId: string,
@@ -156,7 +187,7 @@ export async function markNotificationSent(
   type: 'dailyCheckIn' | 'broken' | 'milestone' | 'welcomeBack',
   accessToken: string,
 ): Promise<void> {
-  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${uid}/settings/notifications?updateMask.fieldPaths=lastSentAt.${type}`;
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${uid}?updateMask.fieldPaths=lastSentAt.${type}`;
 
   const res = await fetch(url, {
     method: 'PATCH',
@@ -183,8 +214,8 @@ export async function markNotificationSent(
 }
 
 /**
- * Append a milestone value to the celebrated array (idempotency for
- * streak milestones — each value is sent exactly once).
+ * Append a milestone value to the celebrated array on the parent user
+ * doc (idempotency for streak milestones — each value is sent exactly once).
  */
 export async function recordMilestoneCelebrated(
   projectId: string,
@@ -192,14 +223,14 @@ export async function recordMilestoneCelebrated(
   milestone: number,
   accessToken: string,
 ): Promise<void> {
-  // For MVP: read-modify-write. Under heavy contention, switch to
-  // FieldValue.arrayUnion via a Cloud Function instead.
+  // Read-modify-write. Under heavy contention, switch to
+  // FieldValue.arrayUnion via a Cloud Function.
   const settings = await getNotificationSettings(projectId, uid, accessToken);
   if (!settings) return;
 
   if (settings.milestonesCelebrated.includes(milestone)) return;
 
-  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${uid}/settings/notifications?updateMask.fieldPaths=milestonesCelebrated`;
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${uid}?updateMask.fieldPaths=milestonesCelebrated`;
 
   const res = await fetch(url, {
     method: 'PATCH',
@@ -234,7 +265,7 @@ export async function clearPushToken(
   uid: string,
   accessToken: string,
 ): Promise<void> {
-  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${uid}/settings/notifications?updateMask.fieldPaths=expoPushToken`;
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${uid}?updateMask.fieldPaths=expoPushToken`;
 
   const res = await fetch(url, {
     method: 'PATCH',
@@ -257,14 +288,15 @@ export async function clearPushToken(
 // ---------------------------------------------------------------------------
 //
 // Firestore REST returns a deeply nested { stringValue, integerValue,
-// booleanValue, mapValue, arrayValue, nullValue } envelope. These helpers
-// flatten that into the TypeScript shape.
+// booleanValue, mapValue, arrayValue, nullValue, timestampValue } envelope.
+// These helpers flatten that into the TypeScript shape.
 
 type FirestoreValue =
   | { stringValue: string }
   | { integerValue: string }
   | { booleanValue: boolean }
   | { nullValue: null }
+  | { timestampValue: string }
   | { mapValue: { fields: Record<string, FirestoreValue> } }
   | { arrayValue: { values: FirestoreValue[] } };
 
@@ -274,14 +306,13 @@ function parseValue<T>(v: FirestoreValue | undefined, fallback: T): T {
   if ('integerValue' in v) return Number(v.integerValue) as unknown as T;
   if ('booleanValue' in v) return v.booleanValue as unknown as T;
   if ('nullValue' in v) return null as unknown as T;
+  if ('timestampValue' in v) return v.timestampValue as unknown as T;
   if ('mapValue' in v) return v.mapValue.fields as unknown as T;
   if ('arrayValue' in v) return v.arrayValue.values as unknown as T;
   return fallback;
 }
 
-function parseMap<T extends object>(
-  v: FirestoreValue | undefined,
-): T {
+function parseMap<T extends object>(v: FirestoreValue | undefined): T {
   if (!v || !('mapValue' in v)) return {} as T;
   const out: Record<string, unknown> = {};
   for (const [k, val] of Object.entries(v.mapValue.fields)) {
@@ -290,23 +321,102 @@ function parseMap<T extends object>(
   return out as T;
 }
 
-function parseNotificationSettings(
+function parseArray<T>(v: FirestoreValue | undefined, itemParse: (item: FirestoreValue) => T): T[] {
+  if (!v || !('arrayValue' in v)) return [];
+  return (v.arrayValue.values ?? []).map(itemParse);
+}
+
+/**
+ * Map the live app's `users/{uid}` doc to the Worker's
+ * NotificationSettings shape.
+ *
+ * App → Worker field mapping:
+ *   user.expoPushToken          → settings.expoPushToken
+ *   user.timezone               → settings.timezone
+ *   user.streak                 → settings.streakCurrent
+ *   user.lastSeenAt             → settings.lastSeenAt
+ *   user.lastShippedAt (ms)     → settings.lastShipDate (YYYY-MM-DD, user-local)
+ *   user.notificationPrefs.*    → settings.prefs.* + settings.checkInTime
+ *   user.lastSentAt (Worker)    → settings.lastSentAt
+ *   user.milestonesCelebrated   → settings.milestonesCelebrated
+ */
+function parseUserDocForSettings(
   fields: Record<string, unknown>,
 ): NotificationSettings {
   const f = fields as Record<string, FirestoreValue>;
+
+  // notificationPrefs is a nested map; pull the bool toggles out of it.
+  const prefsMap = parseMap<Record<string, FirestoreValue>>(
+    f['notificationPrefs'] as FirestoreValue | undefined,
+  );
+  const prefs = {
+    dailyCheckIn: parseValue<boolean>(prefsMap['dailyCheckIn'], true),
+    streakMilestones: parseValue<boolean>(prefsMap['streakMilestones'], true),
+    streakBroken: parseValue<boolean>(prefsMap['streakBroken'], true),
+    welcomeBack: parseValue<boolean>(prefsMap['welcomeBack'], true),
+    friendActivity: parseValue<boolean>(prefsMap['friendActivity'], false),
+    lowNoiseMode: parseValue<boolean>(prefsMap['lowNoiseMode'], false),
+  };
+
+  // checkInTime lives in notificationPrefs (per the app's contract).
+  // Default to 20:00 if missing.
+  const checkInTime = parseValue<string>(prefsMap['checkInTime'] as FirestoreValue, '20:00');
+
+  // Expo push token: app writes either a string or nullValue.
+  const tokenField = f['expoPushToken'];
+  const expoPushToken =
+    tokenField && 'stringValue' in tokenField ? (tokenField.stringValue as string) : null;
+
+  // Timezone: top-level on the user doc; fall back to the prefs value,
+  // then UTC.
+  const timezone = parseValue<string>(
+    f['timezone'] as FirestoreValue,
+    parseValue<string>(prefsMap['timezone'] as FirestoreValue, 'UTC'),
+  );
+
+  // Streak: top-level, default 0.
+  const streakCurrent = parseValue<number>(f['streak'] as FirestoreValue, 0);
+
+  // lastSeenAt: top-level, default 0.
+  const lastSeenAt = parseValue<number>(f['lastSeenAt'] as FirestoreValue, 0);
+
+  // lastShippedAt: top-level ms epoch. Convert to YYYY-MM-DD (user-local).
+  const lastShippedMs = parseValue<number | null>(
+    f['lastShippedAt'] as FirestoreValue,
+    null,
+  );
+  let lastShipDate: string | null = null;
+  if (lastShippedMs) {
+    const d = new Date(lastShippedMs);
+    // Use the user's timezone for the date string.
+    lastShipDate = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(d); // en-CA gives YYYY-MM-DD
+  }
+
+  // Worker-only state: lastSentAt (per-type timestamps).
+  const lastSentAt = parseMap<NotificationSettings['lastSentAt']>(
+    f['lastSentAt'] as FirestoreValue,
+  );
+
+  // Worker-only state: milestonesCelebrated (array of ints).
+  const milestonesCelebrated = parseArray<number>(
+    f['milestonesCelebrated'] as FirestoreValue,
+    (item) => parseValue<number>(item, 0),
+  );
+
   return {
-    prefs: parseMap<NotificationSettings['prefs']>(f['prefs']) as NotificationSettings['prefs'],
-    checkInTime: parseValue(f['checkInTime'], '20:00'),
-    timezone: parseValue(f['timezone'], 'UTC'),
-    expoPushToken: parseValue<FirestoreValue | null>(f['expoPushToken'], null)
-      ? parseValue<string>(f['expoPushToken'], '')
-      : null,
-    lastSentAt: parseMap<NotificationSettings['lastSentAt']>(f['lastSentAt']),
-    milestonesCelebrated: parseValue<number[]>(f['milestonesCelebrated'], []),
-    lastSeenAt: parseValue(f['lastSeenAt'], 0),
-    lastShipDate: parseValue<FirestoreValue | null>(f['lastShipDate'], null)
-      ? parseValue<string>(f['lastShipDate'], '')
-      : null,
-    streakCurrent: parseValue(f['streakCurrent'], 0),
+    prefs,
+    checkInTime,
+    timezone,
+    expoPushToken,
+    lastSentAt,
+    milestonesCelebrated,
+    lastSeenAt,
+    lastShipDate,
+    streakCurrent,
   };
 }

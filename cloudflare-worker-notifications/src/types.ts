@@ -1,9 +1,11 @@
 /**
  * Shared types for the notifications scheduler.
  *
- * Mirrors src/lib/notification-prefs.ts on the client side. Keep in sync
- * when adding prefs — both files describe the same Firestore sub-doc
- * (users/{uid}/settings/notifications).
+ * Mirrors src/lib/notification-prefs.ts + src/lib/account-types.ts on the
+ * client side. Both files describe the SAME parent `users/{uid}` doc —
+ * the Worker reads/writes that one doc, no sub-collection.
+ *
+ * See src/firestore.ts for the field mapping.
  */
 
 export interface NotificationPrefs {
@@ -76,6 +78,8 @@ export interface Env {
   FIREBASE_SERVICE_ACCOUNT_JSON: string;
   /** Set via `wrangler secret put EXPO_ACCESS_TOKEN` (optional). */
   EXPO_ACCESS_TOKEN?: string;
+  /** Set via `wrangler secret put TEST_AUTH_TOKEN` — gates /test route. */
+  TEST_AUTH_TOKEN?: string;
   /** Plain vars from wrangler.toml [vars]. */
   LOG_LEVEL: string;
   FIRESTORE_PROJECT_ID: string;
