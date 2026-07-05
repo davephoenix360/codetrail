@@ -11,7 +11,9 @@
  *  - Aggregate progress is fine
  *  - Hype, never shame
  */
-import type { FeedEntry } from './github-api';
+import type { FeedEntry } from "./github-api";
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
  * Format a feed entry into the main "what they did" line.
@@ -59,14 +61,22 @@ export function timeAgo(entryDate: string, now: Date = new Date()): string {
   if (Number.isNaN(entry.getTime())) return entryDate;
 
   // Same UTC day?
-  const nowDay = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const entryDay = Date.UTC(entry.getUTCFullYear(), entry.getUTCMonth(), entry.getUTCDate());
-  const daysAgo = Math.round((nowDay - entryDay) / (24 * 60 * 60 * 1000));
+  const nowDay = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+  );
+  const entryDay = Date.UTC(
+    entry.getUTCFullYear(),
+    entry.getUTCMonth(),
+    entry.getUTCDate(),
+  );
+  const daysAgo = Math.round((nowDay - entryDay) / MS_PER_DAY);
 
-  if (daysAgo === 0) return 'today';
-  if (daysAgo === 1) return 'yesterday';
+  if (daysAgo === 0) return "today";
+  if (daysAgo === 1) return "yesterday";
   if (daysAgo < 7) return `${daysAgo}d ago`;
-  if (daysAgo < 14) return '1w ago';
+  if (daysAgo < 14) return "1w ago";
   if (daysAgo < 30) return `${Math.floor(daysAgo / 7)}w ago`;
   return `${Math.floor(daysAgo / 30)}mo ago`;
 }
